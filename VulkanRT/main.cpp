@@ -10,6 +10,8 @@
 #define ARRAYSIZE(object) sizeof(object)/sizeof(object[0])
 #define VK_CHECK(call) assert(call == VK_SUCCESS)
 
+#define API_DUMP
+
 #define WIDTH 1280
 #define HEIGHT 720
 
@@ -44,6 +46,9 @@ int main(int argc, char* argv[]) {
 
 #ifdef _DEBUG
 	const char* layers[] = {
+#ifdef API_DUMP
+		"VK_LAYER_LUNARG_api_dump",
+#endif
 		"VK_LAYER_KHRONOS_validation"
 	};
 
