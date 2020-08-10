@@ -147,6 +147,13 @@ int main(int argc, char* argv[]) {
 			continue;
 		}
 
+		VkBool32 presentSupported;
+		VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, graphicsQueueIndex, surface, &presentSupported));
+
+		if (presentSupported == VK_FALSE) {
+			continue;
+		}
+
 		deviceFound = true;
 		break;
 	}
@@ -180,10 +187,68 @@ int main(int argc, char* argv[]) {
 
 	volkLoadDevice(device);
 
+	VkSurfaceCapabilitiesKHR surfaceCapabilities;
+	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
+
+	if (surfaceCapabilities.maxImageCount < 2 && surfaceCapabilities.maxImageCount != 0) {
+		printf("Couldn't get enough swapchain images!");
+		return -1;
+	}
+
+	uint32_t presentModesCount;
+	VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModesCount, 0));
+
+	std::vector<VkPresentModeKHR> presentModes(presentModesCount);
+	VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModesCount, presentModes.data()));
+
+	bool immediatePresentModeSupported = false;
+	for (VkPresentModeKHR presentMode : presentModes) {
+		immediatePresentModeSupported = immediatePresentModeSupported || presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR;
+	}
+
+	uint32_t surfaceFormatsCount;
+	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatsCount, 0));
+
+	std::vector<VkSurfaceFormatKHR> surfaceFormats(surfaceFormatsCount);
+	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatsCount, surfaceFormats.data()));
+
+	bool formatFound = false;
+	VkFormat desiredFormat = VK_FORMAT_B8G8R8A8_UNORM;
+	VkColorSpaceKHR desiredColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+	for (VkSurfaceFormatKHR surfaceFormat : surfaceFormats) {
+		if (surfaceFormat.format == desiredFormat && surfaceFormat.colorSpace == desiredColorSpace) {
+			formatFound = true;
+			break;
+		}
+	}
+
+	if (!formatFound) {
+		printf("No suitable surface format found!");
+		return -1;
+	}
+
+	VkSwapchainCreateInfoKHR swapchainCreateInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
+	swapchainCreateInfo.surface = surface;
+	swapchainCreateInfo.minImageCount = 2;
+	swapchainCreateInfo.queueFamilyIndexCount = 1;
+	swapchainCreateInfo.pQueueFamilyIndices = &graphicsQueueIndex;
+	swapchainCreateInfo.presentMode = immediatePresentModeSupported ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;
+	swapchainCreateInfo.imageFormat = desiredFormat;
+	swapchainCreateInfo.imageColorSpace = desiredColorSpace;
+	swapchainCreateInfo.imageExtent = VkExtent2D{ WIDTH, HEIGHT };
+	swapchainCreateInfo.imageArrayLayers = 1;
+	swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
+
+	VkSwapchainKHR swapchain = 0;
+	VK_CHECK(vkCreateSwapchainKHR(device, &swapchainCreateInfo, 0, &swapchain));
+
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 	}
 
+	vkDestroySwapchainKHR(device, swapchain, 0);
 	vkDestroyDevice(device, 0);
 	vkDestroySurfaceKHR(instance, surface, 0);
 
