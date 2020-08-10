@@ -156,9 +156,32 @@ int main(int argc, char* argv[]) {
 		printf("Selected GPU: %s\n", physicalDeviceProperties.deviceName);
 	}
 
+	const float queuePriorities =  1.0f;
+	VkDeviceQueueCreateInfo deviceQueueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
+	deviceQueueCreateInfo.queueCount = 1;
+	deviceQueueCreateInfo.queueFamilyIndex = graphicsQueueIndex;
+	deviceQueueCreateInfo.pQueuePriorities = &queuePriorities;
+
+	const char* deviceExtensions = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	};
+
+	VkDeviceCreateInfo deviceCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
+	deviceCreateInfo.queueCreateInfoCount = 1;
+	deviceCreateInfo.pQueueCreateInfos = &deviceQueueCreateInfo;
+	deviceCreateInfo.enabledExtensionCount = 1;
+	deviceCreateInfo.ppEnabledExtensionNames = &deviceExtensions;
+
+	VkDevice device = 0;
+	VK_CHECK(vkCreateDevice(physicalDevice, &deviceCreateInfo, 0, &device));
+
+	volkLoadDevice(device);
+
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 	}
+
+	vkDestroyDevice(device, 0);
 
 #ifdef _DEBUG
 	vkDestroyDebugReportCallbackEXT(instance, debugReportCallback, 0);
