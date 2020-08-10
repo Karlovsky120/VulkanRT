@@ -8,12 +8,19 @@
 #include <cstdio>
 
 #define ARRAYSIZE(object) sizeof(object)/sizeof(object[0])
-#define VK_CHECK(call) assert(call == VK_SUCCESS)
+#define VK_CHECK(call) { VkResult result = call; assert(result == VK_SUCCESS); }
 
 #define API_DUMP
 
 #define WIDTH 1280
 #define HEIGHT 720
+
+static VkBool32 VKAPI_CALL debugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType, uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
+	const char* type = (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) ? "ERROR" : (flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) ? "WARNING" : "INFO";
+	printf("%s: %s", type, pMessage);
+
+	return VK_FALSE;
+}
 
 int main(int argc, char* argv[]) {
 
@@ -40,9 +47,14 @@ int main(int argc, char* argv[]) {
 	VkApplicationInfo applicationInfo = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
 	applicationInfo.apiVersion = VK_API_VERSION_1_2;
 	applicationInfo.applicationVersion = 0;
+	applicationInfo.pApplicationName = NULL;
+	applicationInfo.pEngineName = NULL;
+	applicationInfo.engineVersion = 0;
 
 	VkInstanceCreateInfo instanceCreateInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	instanceCreateInfo.pApplicationInfo = &applicationInfo;
+	instanceCreateInfo.enabledLayerCount = 0;
+	instanceCreateInfo.enabledExtensionCount = 0;
 
 #ifdef _DEBUG
 	const char* layers[] = {
@@ -68,9 +80,18 @@ int main(int argc, char* argv[]) {
 
 	VkInstance instance = 0;
 
-	VK_CHECK(vkCreateInstance(&instanceCreateInfo, 0, &instance));
+	VK_CHECK(vkCreateInstance(&instanceCreateInfo, 0, &instance))
 
 	volkLoadInstance(instance);
+
+#ifdef _DEBUG
+	VkDebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo = { VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT };
+	debugReportCallbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT & VK_DEBUG_REPORT_WARNING_BIT_EXT & VK_DEBUG_REPORT_INFORMATION_BIT_EXT & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
+	debugReportCallbackCreateInfo.pfnCallback = debugReportCallback;
+
+	VkDebugReportCallbackEXT debugReportCallback = 0;
+	VK_CHECK(vkCreateDebugReportCallbackEXT(instance, &debugReportCallbackCreateInfo, 0, &debugReportCallback))
+#endif
 
 	VkSurfaceKHR surface = 0;
 
@@ -82,6 +103,12 @@ int main(int argc, char* argv[]) {
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 	}
+
+#ifdef _DEBUG
+	vkDestroyDebugReportCallbackEXT(instance, debugReportCallback, 0);
+#endif
+
+	vkDestroyInstance(instance, 0);
 
 	glfwTerminate();
 
