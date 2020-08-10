@@ -31,6 +31,8 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
 	GLFWwindow* window;
 	window = glfwCreateWindow(WIDTH, HEIGHT, "VulkanRT", NULL, NULL);
 	if (!window) {
@@ -70,15 +72,17 @@ int main(int argc, char* argv[]) {
 	instanceCreateInfo.ppEnabledLayerNames = layers;
 #endif
 
-	const char* extensions[] = {
-		VK_KHR_SURFACE_EXTENSION_NAME,
-#ifdef _DEBUG
-		VK_EXT_DEBUG_REPORT_EXTENSION_NAME
-#endif
-	};
+	uint32_t glfwExtensionCount;
+	const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-	instanceCreateInfo.enabledExtensionCount = ARRAYSIZE(extensions);
-	instanceCreateInfo.ppEnabledExtensionNames = extensions;
+	std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+
+#ifdef _DEBUG
+	extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+#endif
+
+	instanceCreateInfo.enabledExtensionCount = extensions.size();
+	instanceCreateInfo.ppEnabledExtensionNames = extensions.data();
 
 	VkInstance instance = 0;
 
@@ -96,8 +100,7 @@ int main(int argc, char* argv[]) {
 #endif
 
 	VkSurfaceKHR surface = 0;
-
-	if (!glfwCreateWindowSurface(instance, window, 0, &surface)) {
+	if (glfwCreateWindowSurface(instance, window, 0, &surface) != VK_SUCCESS) {
 		printf("Failed to create window surface!");
 		return -1;
 	}
@@ -182,6 +185,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	vkDestroyDevice(device, 0);
+	vkDestroySurfaceKHR(instance, surface, 0);
 
 #ifdef _DEBUG
 	vkDestroyDebugReportCallbackEXT(instance, debugReportCallback, 0);
