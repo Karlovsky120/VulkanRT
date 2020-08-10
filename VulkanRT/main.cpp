@@ -1,3 +1,4 @@
+#define VK_ENABLE_BETA_EXTENSIONS
 #define VOLK_IMPLEMENTATION
 #define GLFW_INCLUDE_VULKAN
 
@@ -6,11 +7,12 @@
 
 #include <assert.h>
 #include <cstdio>
+#include <vector>
 
 #define ARRAYSIZE(object) sizeof(object)/sizeof(object[0])
 #define VK_CHECK(call) { VkResult result = call; assert(result == VK_SUCCESS); }
 
-#define API_DUMP
+#define API_DUMP 1
 
 #define WIDTH 1280
 #define HEIGHT 720
@@ -58,7 +60,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef _DEBUG
 	const char* layers[] = {
-#ifdef API_DUMP
+#if API_DUMP
 		"VK_LAYER_LUNARG_api_dump",
 #endif
 		"VK_LAYER_KHRONOS_validation"
@@ -80,7 +82,7 @@ int main(int argc, char* argv[]) {
 
 	VkInstance instance = 0;
 
-	VK_CHECK(vkCreateInstance(&instanceCreateInfo, 0, &instance))
+	VK_CHECK(vkCreateInstance(&instanceCreateInfo, 0, &instance));
 
 	volkLoadInstance(instance);
 
@@ -90,7 +92,7 @@ int main(int argc, char* argv[]) {
 	debugReportCallbackCreateInfo.pfnCallback = debugReportCallback;
 
 	VkDebugReportCallbackEXT debugReportCallback = 0;
-	VK_CHECK(vkCreateDebugReportCallbackEXT(instance, &debugReportCallbackCreateInfo, 0, &debugReportCallback))
+	VK_CHECK(vkCreateDebugReportCallbackEXT(instance, &debugReportCallbackCreateInfo, 0, &debugReportCallback));
 #endif
 
 	VkSurfaceKHR surface = 0;
@@ -98,6 +100,60 @@ int main(int argc, char* argv[]) {
 	if (!glfwCreateWindowSurface(instance, window, 0, &surface)) {
 		printf("Failed to create window surface!");
 		return -1;
+	}
+	
+	uint32_t physicalDeviceCount = 0;
+	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, 0));
+
+	std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data()));
+
+	VkPhysicalDevice physicalDevice = 0;
+	VkPhysicalDeviceProperties physicalDeviceProperties;
+	uint32_t graphicsQueueIndex = -1;
+	bool deviceFound = false;
+	for (size_t i = 0; i < physicalDeviceCount; ++i) {
+		physicalDevice = physicalDevices[i];
+
+		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+
+		printf("GPU%d: %s\n", i, physicalDeviceProperties.deviceName);
+
+		if (physicalDeviceProperties.apiVersion < VK_API_VERSION_1_2) {
+			continue;
+		}
+
+		if (physicalDeviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+			continue;
+		}
+
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, 0);
+
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+		for (size_t j = 0; j < queueFamilyCount; ++j) {
+			if (queueFamilies[j].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+				graphicsQueueIndex = j;
+				break;
+			}
+		}
+
+		if (graphicsQueueIndex == -1) {
+			continue;
+		}
+
+		deviceFound = true;
+		break;
+	}
+
+	if (!deviceFound) {
+		printf("No suitable GPU found!");
+		return -1;
+	}
+	else {
+		printf("Selected GPU: %s\n", physicalDeviceProperties.deviceName);
 	}
 
 	while (!glfwWindowShouldClose(window)) {
