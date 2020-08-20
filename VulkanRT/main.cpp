@@ -266,10 +266,44 @@ int main(int argc, char* argv[]) {
 	VkSwapchainKHR swapchain = 0;
 	VK_CHECK(vkCreateSwapchainKHR(device, &swapchainCreateInfo, 0, &swapchain));
 
+	VkAttachmentDescription attachments[2] = {};
+	attachments[0].format = desiredFormat;
+	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	attachments[1].format = VK_FORMAT_D32_SFLOAT;
+	attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference colorRef = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+	VkAttachmentReference depthRef = { 1, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL };
+
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorRef;
+	subpass.pDepthStencilAttachment = &depthRef;
+
+	VkRenderPassCreateInfo renderPassCreateInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+	renderPassCreateInfo.attachmentCount = ARRAYSIZE(attachments);
+	renderPassCreateInfo.pAttachments = attachments;
+	renderPassCreateInfo.subpassCount = 1;
+	renderPassCreateInfo.pSubpasses = &subpass;
+
+	VkRenderPass renderPass = 0;
+	VK_CHECK(vkCreateRenderPass(device, &renderPassCreateInfo, 0, &renderPass));
+
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 	}
 
+	vkDestroyRenderPass(device, renderPass, 0);
 	vkDestroySwapchainKHR(device, swapchain, 0);
 	vkDestroyDevice(device, 0);
 	vkDestroySurfaceKHR(instance, surface, 0);
