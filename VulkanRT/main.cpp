@@ -26,30 +26,7 @@ static VkBool32 VKAPI_CALL debugReportCallback(VkDebugReportFlagsEXT flags, VkDe
 	return VK_FALSE;
 }
 
-int main(int argc, char* argv[]) {
-
-	if (!glfwInit()) {
-		printf("Failed to initialize GLFW!");
-		return -1;
-	}
-
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
-	GLFWwindow* window;
-	window = glfwCreateWindow(WIDTH, HEIGHT, "VulkanRT", NULL, NULL);
-	if (!window) {
-		printf("Failed to create GLFW window!");
-		glfwTerminate();
-		return -1;
-	}
-
-	if (volkInitialize() != VK_SUCCESS) {
-		printf("Failed to initialize Volk!");
-		return -1;
-	}
-
-	assert(volkGetInstanceVersion() >= VK_API_VERSION_1_2);
-
+VkInstance createInstance() {
 	VkApplicationInfo applicationInfo = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
 	applicationInfo.apiVersion = VK_API_VERSION_1_2;
 	applicationInfo.applicationVersion = 0;
@@ -90,6 +67,96 @@ int main(int argc, char* argv[]) {
 
 	VK_CHECK(vkCreateInstance(&instanceCreateInfo, 0, &instance));
 
+	return instance;
+}
+
+int getGraphicsQueueFamilyIndex(VkPhysicalDevice physicalDevice) {
+	uint32_t queueFamilyCount = 0;
+	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, 0);
+
+	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+	uint32_t graphicsQueueFamilyIndex = -1;
+	for (size_t j = 0; j < queueFamilyCount; ++j) {
+		if (queueFamilies[j].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+			graphicsQueueFamilyIndex = j;
+			break;
+		}
+	}
+
+	return graphicsQueueFamilyIndex;
+}
+
+bool pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface, VkPhysicalDevice &physicalDevice) {
+	uint32_t physicalDeviceCount = 0;
+	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, 0));
+
+	std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data()));
+
+	uint32_t graphicsQueueIndex = -1;
+	bool deviceFound = false;
+	for (size_t i = 0; i < physicalDeviceCount; ++i) {
+		physicalDevice = physicalDevices[i];
+
+		VkPhysicalDeviceProperties physicalDeviceProperties;
+		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+
+		printf("GPU%d: %s\n", i, physicalDeviceProperties.deviceName);
+
+		if (physicalDeviceProperties.apiVersion < VK_API_VERSION_1_2) {
+			continue;
+		}
+
+		if (physicalDeviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+			continue;
+		}
+
+		if (getGraphicsQueueFamilyIndex(physicalDevice) == -1) {
+			continue;
+		}
+
+		VkBool32 presentSupported;
+		VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, graphicsQueueIndex, surface, &presentSupported));
+
+		if (presentSupported == VK_FALSE) {
+			continue;
+		}
+
+		deviceFound = true;
+		break;
+	}
+
+	return deviceFound;
+}
+
+int main(int argc, char* argv[]) {
+
+	if (!glfwInit()) {
+		printf("Failed to initialize GLFW!");
+		return -1;
+	}
+
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+	GLFWwindow* window;
+	window = glfwCreateWindow(WIDTH, HEIGHT, "VulkanRT", NULL, NULL);
+	if (!window) {
+		printf("Failed to create GLFW window!");
+		glfwTerminate();
+		return -1;
+	}
+
+	if (volkInitialize() != VK_SUCCESS) {
+		printf("Failed to initialize Volk!");
+		return -1;
+	}
+
+	assert(volkGetInstanceVersion() >= VK_API_VERSION_1_2);
+
+	VkInstance instance = createInstance();
+
 	volkLoadInstance(instance);
 
 #ifdef _DEBUG
@@ -107,71 +174,24 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 	
-	uint32_t physicalDeviceCount = 0;
-	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, 0));
-
-	std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
-	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data()));
-
 	VkPhysicalDevice physicalDevice = 0;
 	VkPhysicalDeviceProperties physicalDeviceProperties;
-	uint32_t graphicsQueueIndex = -1;
-	bool deviceFound = false;
-	for (size_t i = 0; i < physicalDeviceCount; ++i) {
-		physicalDevice = physicalDevices[i];
 
-		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
-
-		printf("GPU%d: %s\n", i, physicalDeviceProperties.deviceName);
-
-		if (physicalDeviceProperties.apiVersion < VK_API_VERSION_1_2) {
-			continue;
-		}
-
-		if (physicalDeviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-			continue;
-		}
-
-		uint32_t queueFamilyCount = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, 0);
-
-		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
-
-		for (size_t j = 0; j < queueFamilyCount; ++j) {
-			if (queueFamilies[j].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-				graphicsQueueIndex = j;
-				break;
-			}
-		}
-
-		if (graphicsQueueIndex == -1) {
-			continue;
-		}
-
-		VkBool32 presentSupported;
-		VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, graphicsQueueIndex, surface, &presentSupported));
-
-		if (presentSupported == VK_FALSE) {
-			continue;
-		}
-
-		deviceFound = true;
-		break;
-	}
-
-	if (!deviceFound) {
+	if (pickPhysicalDevice(instance, surface, physicalDevice)) {
 		printf("No suitable GPU found!");
 		return -1;
 	}
 	else {
+		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
 		printf("Selected GPU: %s\n", physicalDeviceProperties.deviceName);
 	}
+
+	uint32_t graphicsQueueFamilyIndex = getGraphicsQueueFamilyIndex(physicalDevice);
 
 	const float queuePriorities =  1.0f;
 	VkDeviceQueueCreateInfo deviceQueueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
 	deviceQueueCreateInfo.queueCount = 1;
-	deviceQueueCreateInfo.queueFamilyIndex = graphicsQueueIndex;
+	deviceQueueCreateInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
 	deviceQueueCreateInfo.pQueuePriorities = &queuePriorities;
 
 	const char* deviceExtensions = {
@@ -233,7 +253,7 @@ int main(int argc, char* argv[]) {
 	swapchainCreateInfo.surface = surface;
 	swapchainCreateInfo.minImageCount = 2;
 	swapchainCreateInfo.queueFamilyIndexCount = 1;
-	swapchainCreateInfo.pQueueFamilyIndices = &graphicsQueueIndex;
+	swapchainCreateInfo.pQueueFamilyIndices = &graphicsQueueFamilyIndex;
 	swapchainCreateInfo.presentMode = immediatePresentModeSupported ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;
 	swapchainCreateInfo.imageFormat = desiredFormat;
 	swapchainCreateInfo.imageColorSpace = desiredColorSpace;
