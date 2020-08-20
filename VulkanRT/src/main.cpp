@@ -131,6 +131,32 @@ bool pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface, VkPhysicalDev
 	return deviceFound;
 }
 
+VkShaderModule loadShader(VkDevice device, const char* pathToSource) {
+	FILE* source;
+	fopen_s(&source, pathToSource, "rb");
+	assert(source);
+
+	fseek(source, 0, SEEK_END);
+	size_t length = ftell(source);
+	assert(length > 0);
+	fseek(source, 0, SEEK_SET);
+
+	char* buffer = new char[length];
+	size_t readChars = fread(buffer, 1, length, source);
+	assert(length == readChars);
+
+	VkShaderModuleCreateInfo createInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+	createInfo.codeSize = length;
+	createInfo.pCode = reinterpret_cast<uint32_t*>(buffer);
+
+	VkShaderModule shaderModule = 0;
+	VK_CHECK(vkCreateShaderModule(device, &createInfo, 0, &shaderModule));
+
+	delete[] buffer;
+
+	return shaderModule;
+}
+
 int main(int argc, char* argv[]) {
 
 	if (!glfwInit()) {
@@ -243,7 +269,7 @@ int main(int argc, char* argv[]) {
 			break;
 		}
 	}
-
+	
 	if (!formatFound) {
 		printf("No suitable surface format found!");
 		return -1;
@@ -298,6 +324,12 @@ int main(int argc, char* argv[]) {
 
 	VkRenderPass renderPass = 0;
 	VK_CHECK(vkCreateRenderPass(device, &renderPassCreateInfo, 0, &renderPass));
+
+	VkShaderModule vertexShader = loadShader(device, "src/shaders/spirv/vertexShader.spv");
+	VkShaderModule fragmentShader = loadShader(device, "src/shaders/spirv/fragmentShader.spv");
+
+	vkDestroyShaderModule(device, fragmentShader, 0);
+	vkDestroyShaderModule(device, vertexShader, 0);
 
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();

@@ -10,6 +10,19 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="src\Shaders\vertexShader.vert">
+      <FileType>Document</FileType>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="src\Shaders\fragmentShader.frag">
+      <FileType>Document</FileType>
+    </CustomBuild>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <ProjectGuid>{C806B7CD-1C8E-455C-B345-111BB461E2EF}</ProjectGuid>
@@ -67,6 +80,18 @@
       <AdditionalLibraryDirectories>$(SolutionDir)external\glfw\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <CustomBuild>
+      <Command>"$(VULKAN_SDK)\Bin\glslangValidator" "%(FullPath)" -V --target-env vulkan1.2 -o src/shaders/spirv/%(Filename).spv</Command>
+    </CustomBuild>
+    <CustomBuild>
+      <Message>Vulkan shadere compilation</Message>
+    </CustomBuild>
+    <CustomBuild>
+      <Outputs>src/shaders/spirv/%(Filename).spv</Outputs>
+    </CustomBuild>
+    <CustomBuild>
+      <BuildInParallel>true</BuildInParallel>
+    </CustomBuild>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -87,10 +112,19 @@
       <AdditionalLibraryDirectories>$(SolutionDir)external\glfw\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <CustomBuild>
+      <Command>"$(VULKAN_SDK)\Bin\glslangValidator" "%(FullPath)" -V --target-env vulkan1.2 -o src/shaders/spirv/%(Filename).spv</Command>
+    </CustomBuild>
+    <CustomBuild>
+      <Message>Vulkan shadere compilation</Message>
+    </CustomBuild>
+    <CustomBuild>
+      <Outputs>src/shaders/spirv/%(Filename).spv</Outputs>
+    </CustomBuild>
+    <CustomBuild>
+      <BuildInParallel>true</BuildInParallel>
+    </CustomBuild>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="main.cpp" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
