@@ -199,7 +199,7 @@ int main(int argc, char* argv[]) {
 		printf("Failed to create window surface!");
 		return -1;
 	}
-	
+
 	VkPhysicalDevice physicalDevice = 0;
 	VkPhysicalDeviceProperties physicalDeviceProperties;
 
@@ -214,7 +214,7 @@ int main(int argc, char* argv[]) {
 
 	uint32_t graphicsQueueFamilyIndex = getGraphicsQueueFamilyIndex(physicalDevice);
 
-	const float queuePriorities =  1.0f;
+	const float queuePriorities = 1.0f;
 	VkDeviceQueueCreateInfo deviceQueueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
 	deviceQueueCreateInfo.queueCount = 1;
 	deviceQueueCreateInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
@@ -269,7 +269,7 @@ int main(int argc, char* argv[]) {
 			break;
 		}
 	}
-	
+
 	if (!formatFound) {
 		printf("No suitable surface format found!");
 		return -1;
@@ -328,6 +328,85 @@ int main(int argc, char* argv[]) {
 	VkShaderModule vertexShader = loadShader(device, "src/shaders/spirv/vertexShader.spv");
 	VkShaderModule fragmentShader = loadShader(device, "src/shaders/spirv/fragmentShader.spv");
 
+	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+	pipelineCacheCreateInfo.initialDataSize = 0;
+
+	VkPipelineCache pipelineCache = 0;
+	VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, 0, &pipelineCache));
+
+	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+
+	VkPipelineLayout pipelineLayout = 0;
+	VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, 0, &pipelineLayout));
+
+	VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+
+	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+
+	VkPipelineShaderStageCreateInfo vertexStageInfo = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
+	vertexStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertexStageInfo.module = vertexShader;
+	vertexStageInfo.pName = "main";
+	shaderStages.push_back(vertexStageInfo);
+
+	VkPipelineShaderStageCreateInfo fragmentStageInfo = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
+	fragmentStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragmentStageInfo.module = fragmentShader;
+	fragmentStageInfo.pName = "main";
+	shaderStages.push_back(fragmentStageInfo);
+
+	pipelineCreateInfo.stageCount = shaderStages.size();
+	pipelineCreateInfo.pStages = shaderStages.data();
+
+	VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+	pipelineCreateInfo.pVertexInputState = &vertexInputStateCreateInfo;
+
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+	inputAssemblyStateCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	pipelineCreateInfo.pInputAssemblyState = &inputAssemblyStateCreateInfo;
+
+	VkPipelineViewportStateCreateInfo viewportStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+	viewportStateCreateInfo.viewportCount = 1;
+	viewportStateCreateInfo.scissorCount = 1;
+	pipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
+
+	VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+	rasterizationStateCreateInfo.lineWidth = 1.0f;
+	rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+	pipelineCreateInfo.pRasterizationState = &rasterizationStateCreateInfo;
+
+	VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+	multisampleStateCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	pipelineCreateInfo.pMultisampleState = &multisampleStateCreateInfo;
+
+	VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+	depthStencilStateCreateInfo.depthTestEnable = true;
+	depthStencilStateCreateInfo.depthWriteEnable = true;
+	depthStencilStateCreateInfo.depthCompareOp = VK_COMPARE_OP_GREATER;
+	pipelineCreateInfo.pDepthStencilState = &depthStencilStateCreateInfo;
+
+	VkPipelineColorBlendAttachmentState colorBlendAttachmentState = {};
+	colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+	VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+	colorBlendStateCreateInfo.attachmentCount = 1;
+	colorBlendStateCreateInfo.pAttachments = &colorBlendAttachmentState;
+	pipelineCreateInfo.pColorBlendState = &colorBlendStateCreateInfo;
+
+	VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+
+	VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+	dynamicStateCreateInfo.dynamicStateCount = ARRAYSIZE(dynamicStates);
+	dynamicStateCreateInfo.pDynamicStates = dynamicStates;
+	pipelineCreateInfo.pDynamicState = &dynamicStateCreateInfo;
+
+	pipelineCreateInfo.layout = pipelineLayout;
+	pipelineCreateInfo.renderPass = renderPass;
+
+	VkPipeline pipeline = 0;
+	VK_CHECK(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, 0, &pipeline));
+
 	vkDestroyShaderModule(device, fragmentShader, 0);
 	vkDestroyShaderModule(device, vertexShader, 0);
 
@@ -335,6 +414,9 @@ int main(int argc, char* argv[]) {
 		glfwPollEvents();
 	}
 
+	vkDestroyPipeline(device, pipeline, 0);
+	vkDestroyPipelineLayout(device, pipelineLayout, 0);
+	vkDestroyPipelineCache(device, pipelineCache, 0);
 	vkDestroyRenderPass(device, renderPass, 0);
 	vkDestroySwapchainKHR(device, swapchain, 0);
 	vkDestroyDevice(device, 0);
