@@ -275,9 +275,14 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
+	if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount) {
+		imageCount = surfaceCapabilities.minImageCount;
+	}
+
 	VkSwapchainCreateInfoKHR swapchainCreateInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
 	swapchainCreateInfo.surface = surface;
-	swapchainCreateInfo.minImageCount = 2;
+	swapchainCreateInfo.minImageCount = imageCount;
 	swapchainCreateInfo.queueFamilyIndexCount = 1;
 	swapchainCreateInfo.pQueueFamilyIndices = &graphicsQueueFamilyIndex;
 	swapchainCreateInfo.presentMode = immediatePresentModeSupported ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;
@@ -291,6 +296,32 @@ int main(int argc, char* argv[]) {
 
 	VkSwapchainKHR swapchain = 0;
 	VK_CHECK(vkCreateSwapchainKHR(device, &swapchainCreateInfo, 0, &swapchain));
+
+	uint32_t swapchainImageCount;
+	VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, 0));
+
+	std::vector<VkImage> swapchainImages(swapchainImageCount);
+	VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data()));
+
+	std::vector<VkImageView> swapchainImageViews(swapchainImageCount);
+
+	VkImageViewCreateInfo imageViewCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	imageViewCreateInfo.format = desiredFormat;
+	imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+	imageViewCreateInfo.subresourceRange.levelCount = 1;
+	imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+	imageViewCreateInfo.subresourceRange.layerCount = 1;
+
+	for (size_t i = 0; i < swapchainImageCount; ++i) {
+		imageViewCreateInfo.image = swapchainImages[i];
+		VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, 0, &swapchainImageViews[i]));
+	}
 
 	VkAttachmentDescription attachments[2] = {};
 	attachments[0].format = desiredFormat;
@@ -324,6 +355,19 @@ int main(int argc, char* argv[]) {
 
 	VkRenderPass renderPass = 0;
 	VK_CHECK(vkCreateRenderPass(device, &renderPassCreateInfo, 0, &renderPass));
+
+	VkFramebufferCreateInfo framebufferCreateInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+	framebufferCreateInfo.renderPass = renderPass;
+	framebufferCreateInfo.attachmentCount = 1;
+	framebufferCreateInfo.width = WIDTH;
+	framebufferCreateInfo.height = HEIGHT;
+	framebufferCreateInfo.layers = 1;
+
+	std::vector<VkFramebuffer> framebuffers(swapchainImageCount);
+	for (size_t i = 0; i < swapchainImageCount; ++i) {
+		framebufferCreateInfo.pAttachments = &swapchainImageViews[i];
+		VK_CHECK(vkCreateFramebuffer(device, &framebufferCreateInfo, 0, &framebuffers[i]));
+	}
 
 	VkShaderModule vertexShader = loadShader(device, "src/shaders/spirv/vertexShader.spv");
 	VkShaderModule fragmentShader = loadShader(device, "src/shaders/spirv/fragmentShader.spv");
@@ -410,14 +454,34 @@ int main(int argc, char* argv[]) {
 	vkDestroyShaderModule(device, fragmentShader, 0);
 	vkDestroyShaderModule(device, vertexShader, 0);
 
+	VkCommandPoolCreateInfo commandPoolCreateInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+	commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	commandPoolCreateInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
+
+	VkCommandPool commandPool = 0;
+	VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, 0, &commandPool));
+
+
+
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 	}
 
+	vkDestroyCommandPool(device, commandPool, 0);
 	vkDestroyPipeline(device, pipeline, 0);
 	vkDestroyPipelineLayout(device, pipelineLayout, 0);
 	vkDestroyPipelineCache(device, pipelineCache, 0);
+
+	for (size_t i = 0; i < swapchainImageCount; ++i) {
+		vkDestroyFramebuffer(device, framebuffers[i], 0);
+	}
+
 	vkDestroyRenderPass(device, renderPass, 0);
+
+	for (size_t i = 0; i < swapchainImageCount; ++i) {
+		vkDestroyImageView(device, swapchainImageViews[i], 0);
+	}
+
 	vkDestroySwapchainKHR(device, swapchain, 0);
 	vkDestroyDevice(device, 0);
 	vkDestroySurfaceKHR(instance, surface, 0);
