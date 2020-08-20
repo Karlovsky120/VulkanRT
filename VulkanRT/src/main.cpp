@@ -34,10 +34,10 @@ VkInstance createInstance() {
 	applicationInfo.pEngineName = NULL;
 	applicationInfo.engineVersion = 0;
 
-	VkInstanceCreateInfo instanceCreateInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
-	instanceCreateInfo.pApplicationInfo = &applicationInfo;
-	instanceCreateInfo.enabledLayerCount = 0;
-	instanceCreateInfo.enabledExtensionCount = 0;
+	VkInstanceCreateInfo createInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
+	createInfo.pApplicationInfo = &applicationInfo;
+	createInfo.enabledLayerCount = 0;
+	createInfo.enabledExtensionCount = 0;
 
 #ifdef _DEBUG
 	const char* layers[] = {
@@ -47,8 +47,8 @@ VkInstance createInstance() {
 		"VK_LAYER_KHRONOS_validation"
 	};
 
-	instanceCreateInfo.enabledLayerCount = ARRAYSIZE(layers);
-	instanceCreateInfo.ppEnabledLayerNames = layers;
+	createInfo.enabledLayerCount = ARRAYSIZE(layers);
+	createInfo.ppEnabledLayerNames = layers;
 #endif
 
 	uint32_t glfwExtensionCount;
@@ -60,17 +60,17 @@ VkInstance createInstance() {
 	extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 #endif
 
-	instanceCreateInfo.enabledExtensionCount = extensions.size();
-	instanceCreateInfo.ppEnabledExtensionNames = extensions.data();
+	createInfo.enabledExtensionCount = extensions.size();
+	createInfo.ppEnabledExtensionNames = extensions.data();
 
 	VkInstance instance = 0;
 
-	VK_CHECK(vkCreateInstance(&instanceCreateInfo, 0, &instance));
+	VK_CHECK(vkCreateInstance(&createInfo, 0, &instance));
 
 	return instance;
 }
 
-int getGraphicsQueueFamilyIndex(VkPhysicalDevice physicalDevice) {
+int getGraphicsQueueFamilyIndex(const VkPhysicalDevice physicalDevice) {
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, 0);
 
@@ -88,7 +88,7 @@ int getGraphicsQueueFamilyIndex(VkPhysicalDevice physicalDevice) {
 	return graphicsQueueFamilyIndex;
 }
 
-bool pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface, VkPhysicalDevice &physicalDevice) {
+bool pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface, VkPhysicalDevice &physicalDevice) {
 	uint32_t physicalDeviceCount = 0;
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, 0));
 
@@ -131,7 +131,7 @@ bool pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface, VkPhysicalDev
 	return deviceFound;
 }
 
-VkShaderModule loadShader(VkDevice device, const char* pathToSource) {
+VkShaderModule loadShader(const VkDevice device, const char* pathToSource) {
 	FILE* source;
 	fopen_s(&source, pathToSource, "rb");
 	assert(source);
