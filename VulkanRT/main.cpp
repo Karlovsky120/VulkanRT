@@ -1,3 +1,5 @@
+#pragma warning( disable : 26812) // Prefer 'enum class' over 'enum'.
+
 #define VK_ENABLE_BETA_EXTENSIONS
 #define VOLK_IMPLEMENTATION
 #define GLFW_INCLUDE_VULKAN
