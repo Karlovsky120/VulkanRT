@@ -14,14 +14,26 @@
 #define ARRAYSIZE(object) sizeof(object)/sizeof(object[0])
 #define VK_CHECK(call) { VkResult result = call; assert(result == VK_SUCCESS); }
 
-#define API_DUMP 1
+#define API_DUMP 0
+#define VERBOSE 0
+#define INFO 0
 
 #define WIDTH 1280
 #define HEIGHT 720
 
-static VkBool32 VKAPI_CALL debugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType, uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
-	const char* type = (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) ? "ERROR" : (flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) ? "WARNING" : "INFO";
-	printf("%s: %s", type, pMessage);
+static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+	const char* severity =
+		(messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ? "ERROR" :
+		(messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ? "WARNING" :
+		(messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) ? "INFO" :
+		"VERBOSE";
+
+	const char* type =
+		(messageTypes & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) ? "GENERAL" :
+		(messageTypes & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) ? "VALIDATION" :
+		"PERFORMANCE";
+
+	printf("%s-%s: %s\n", severity, type, pCallbackData->pMessage);
 
 	return VK_FALSE;
 }
@@ -57,7 +69,7 @@ VkInstance createInstance() {
 	std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
 #ifdef _DEBUG
-	extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+	extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
 	createInfo.enabledExtensionCount = extensions.size();
@@ -88,7 +100,7 @@ int getGraphicsQueueFamilyIndex(const VkPhysicalDevice physicalDevice) {
 	return graphicsQueueFamilyIndex;
 }
 
-bool pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface, VkPhysicalDevice &physicalDevice) {
+bool pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface, VkPhysicalDevice& physicalDevice) {
 	uint32_t physicalDeviceCount = 0;
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, 0));
 
@@ -186,12 +198,19 @@ int main(int argc, char* argv[]) {
 	volkLoadInstance(instance);
 
 #ifdef _DEBUG
-	VkDebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo = { VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT };
-	debugReportCallbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT & VK_DEBUG_REPORT_WARNING_BIT_EXT & VK_DEBUG_REPORT_INFORMATION_BIT_EXT & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
-	debugReportCallbackCreateInfo.pfnCallback = debugReportCallback;
+	VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfo = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
+	debugUtilsMessengerCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+#if INFO
+	debugUtilsMessengerCreateInfo.messageSeverity = | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
+#endif
+#if VERBOSE
+	debugUtilsMessengerCreateInfo.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+#endif
+	debugUtilsMessengerCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+	debugUtilsMessengerCreateInfo.pfnUserCallback = debugUtilsCallback;
 
-	VkDebugReportCallbackEXT debugReportCallback = 0;
-	VK_CHECK(vkCreateDebugReportCallbackEXT(instance, &debugReportCallbackCreateInfo, nullptr, &debugReportCallback));
+	VkDebugUtilsMessengerEXT debugUtilsMessenger;
+	VK_CHECK(vkCreateDebugUtilsMessengerEXT(instance, &debugUtilsMessengerCreateInfo, nullptr, &debugUtilsMessenger));
 #endif
 
 	VkSurfaceKHR surface = 0;
@@ -487,7 +506,7 @@ int main(int argc, char* argv[]) {
 	vkDestroySurfaceKHR(instance, surface, 0);
 
 #ifdef _DEBUG
-	vkDestroyDebugReportCallbackEXT(instance, debugReportCallback, 0);
+	vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, 0);
 #endif
 
 	vkDestroyInstance(instance, 0);
