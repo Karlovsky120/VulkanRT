@@ -103,7 +103,7 @@ int getGraphicsQueueFamilyIndex(const VkPhysicalDevice physicalDevice) {
 	return graphicsQueueFamilyIndex;
 }
 
-bool pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface, VkPhysicalDevice& physicalDevice) {
+VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface) {
 	uint32_t physicalDeviceCount = 0;
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, 0));
 
@@ -113,7 +113,7 @@ bool pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface, V
 	uint32_t graphicsQueueIndex = -1;
 	bool deviceFound = false;
 	for (size_t i = 0; i < physicalDeviceCount; ++i) {
-		physicalDevice = physicalDevices[i];
+		VkPhysicalDevice physicalDevice = physicalDevices[i];
 
 		VkPhysicalDeviceProperties physicalDeviceProperties;
 		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
@@ -141,11 +141,10 @@ bool pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface, V
 			continue;
 		}
 
-		deviceFound = true;
-		break;
+		return physicalDevice;
 	}
 
-	return deviceFound;
+	throw std::runtime_error("No suitable GPU found!");
 }
 
 bool surfaceFormatSupported(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface, const VkSurfaceFormatKHR& desiredSurfaceFormat) {
@@ -456,20 +455,27 @@ int main(int argc, char* argv[]) {
 	VkSurfaceKHR surface = 0;
 	if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
 		printf("Failed to create window surface!");
+
+		vkDestroyInstance(instance, nullptr);
 		return -1;
 	}
 
 	VkPhysicalDevice physicalDevice = 0;
 	VkPhysicalDeviceProperties physicalDeviceProperties;
 
-	if (!pickPhysicalDevice(instance, surface, physicalDevice)) {
-		printf("No suitable GPU found!");
+	try {
+		physicalDevice = pickPhysicalDevice(instance, surface);
+	}
+	catch (std::runtime_error& e) {
+		printf("%s", e.what);
+
+		vkDestroySurfaceKHR(instance, surface, nullptr);
+		vkDestroyInstance(instance, nullptr);
 		return -1;
 	}
-	else {
-		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
-		printf("Selected GPU: %s\n", physicalDeviceProperties.deviceName);
-	}
+
+	vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+	printf("Selected GPU: %s\n", physicalDeviceProperties.deviceName);
 
 	uint32_t graphicsQueueFamilyIndex = getGraphicsQueueFamilyIndex(physicalDevice);
 
@@ -500,11 +506,23 @@ int main(int argc, char* argv[]) {
 
 	if (!surfaceFormatSupported(physicalDevice, surface, surfaceFormat)) {
 		printf("Requested surface format not supported!");
+
+		vkDestroyDevice(device, nullptr);
+		vkDestroySurfaceKHR(instance, surface, nullptr);
+		vkDestroyInstance(instance, nullptr);
+
 		return -1;
 	}
 
+	uint32_t requestedSwapchainImageCount;
+	try {
+		requestedSwapchainImageCount = getSwapchainImageCount(physicalDevice, surface);
+	}
+	catch (std::runtime_error& e) {
+		printf("%s", e.what);
+	}
+
 	VkPresentModeKHR presentMode = getPresentMode(physicalDevice, surface);
-	uint32_t requestedSwapchainImageCount = getSwapchainImageCount(physicalDevice, surface);
 	VkSwapchainKHR swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, requestedSwapchainImageCount, graphicsQueueFamilyIndex);
 
 	std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
