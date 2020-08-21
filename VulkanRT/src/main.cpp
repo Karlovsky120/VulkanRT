@@ -408,6 +408,60 @@ VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipeline
 	return pipeline;
 }
 
+std::vector<VkCommandBuffer> allocateCommandBuffers(const VkDevice device, const VkCommandPool commandPool, const uint32_t bufferCount) {
+	std::vector<VkCommandBuffer> commandBuffers(bufferCount);
+
+	VkCommandBufferAllocateInfo commandBufferAllocateInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+	commandBufferAllocateInfo.commandPool = commandPool;
+	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	commandBufferAllocateInfo.commandBufferCount = commandBuffers.size();
+
+	VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, commandBuffers.data()));
+}
+
+void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, const VkRenderPass renderPass, const std::vector<VkFramebuffer>& framebuffers, const VkPipeline pipeline) {
+	VkCommandBufferBeginInfo commandBufferBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+
+	VkRenderPassBeginInfo renderPassBeginInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+	renderPassBeginInfo.renderPass = renderPass;
+	renderPassBeginInfo.renderArea.offset = { 0, 0 };
+	renderPassBeginInfo.renderArea.extent = VkExtent2D{ WIDTH, HEIGHT };
+
+	VkClearValue clearColor = { 0.0f, 0.0f, 0.1f, 1.0f };
+	renderPassBeginInfo.clearValueCount = 1;
+	renderPassBeginInfo.pClearValues = &clearColor;
+
+	VkViewport viewport = {};
+	viewport.width = WIDTH;
+	viewport.height = HEIGHT;
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.minDepth = 1.0f;
+	viewport.maxDepth = 0.0f;
+
+	VkRect2D scissor = {};
+	scissor.offset = { 0, 0 };
+	scissor.extent = { WIDTH, HEIGHT };
+
+	for (size_t i = 0; i < commandBuffers.size(); ++i) {
+		VK_CHECK(vkBeginCommandBuffer(commandBuffers[i], &commandBufferBeginInfo));
+
+		vkCmdSetViewport(commandBuffers[i], 0, 1, &viewport);
+		vkCmdSetScissor(commandBuffers[i], 0, 1, &scissor);
+
+		renderPassBeginInfo.framebuffer = framebuffers[i];
+		vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+		vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
+		vkCmdEndRenderPass(commandBuffers[i]);
+
+		VK_CHECK(vkEndCommandBuffer(commandBuffers[i]));
+	}
+}
+
 int main(int argc, char* argv[]) {
 
 	if (!glfwInit()) {
@@ -561,56 +615,9 @@ int main(int argc, char* argv[]) {
 	VkCommandPool commandPool = 0;
 	VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPool));
 
-	std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
+	std::vector<VkCommandBuffer> commandBuffers = allocateCommandBuffers(device, commandPool, swapchainImageCount);
 
-	VkCommandBufferAllocateInfo commandBufferAllocateInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-	commandBufferAllocateInfo.commandPool = commandPool;
-	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	commandBufferAllocateInfo.commandBufferCount = commandBuffers.size();
-
-	VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, commandBuffers.data()));
-
-	VkCommandBufferBeginInfo commandBufferBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-
-	VkRenderPassBeginInfo renderPassBeginInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
-	renderPassBeginInfo.renderPass = renderPass;
-	renderPassBeginInfo.renderArea.offset = { 0, 0 };
-	renderPassBeginInfo.renderArea.extent = VkExtent2D{ WIDTH, HEIGHT };
-
-	VkClearValue clearColor = { 0.0f, 0.0f, 0.1f, 1.0f };
-	renderPassBeginInfo.clearValueCount = 1;
-	renderPassBeginInfo.pClearValues = &clearColor;
-
-	VkViewport viewport = {};
-	viewport.width = WIDTH;
-	viewport.height = HEIGHT;
-	viewport.x = 0;
-	viewport.y = 0;
-	viewport.minDepth = 1.0f;
-	viewport.maxDepth = 0.0f;
-
-	VkRect2D scissor = {};
-	scissor.offset = { 0, 0 };
-	scissor.extent = { WIDTH, HEIGHT };
-
-	for (size_t i = 0; i < commandBuffers.size(); ++i) {
-		VK_CHECK(vkBeginCommandBuffer(commandBuffers[i], &commandBufferBeginInfo));
-
-
-		vkCmdSetViewport(commandBuffers[i], 0, 1, &viewport);
-		vkCmdSetScissor(commandBuffers[i], 0, 1, &scissor);
-
-		renderPassBeginInfo.framebuffer = framebuffers[i];
-		vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-
-		vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-
-		vkCmdEndRenderPass(commandBuffers[i]);
-
-		VK_CHECK(vkEndCommandBuffer(commandBuffers[i]));
-	}
+	recordCommandBuffers(commandBuffers, renderPass, framebuffers, pipeline);
 
 	std::vector<VkSemaphore> imageAvailableSemaphores(MAX_FRAMES_IN_FLIGHT);
 	std::vector<VkSemaphore> renderFinishedSemaphores(MAX_FRAMES_IN_FLIGHT);
