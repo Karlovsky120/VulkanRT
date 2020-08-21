@@ -9,6 +9,7 @@
 
 #include <assert.h>
 #include <cstdio>
+#include <stdexcept>
 #include <vector>
 
 #define ARRAYSIZE(object) sizeof(object)/sizeof(object[0])
@@ -147,6 +148,75 @@ bool pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface, V
 	return deviceFound;
 }
 
+bool surfaceFormatSupported(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface, const VkSurfaceFormatKHR& desiredSurfaceFormat) {
+	uint32_t surfaceFormatsCount;
+	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatsCount, 0));
+
+	std::vector<VkSurfaceFormatKHR> surfaceFormats(surfaceFormatsCount);
+	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatsCount, surfaceFormats.data()));
+
+	for (VkSurfaceFormatKHR surfaceFormat : surfaceFormats) {
+		if (surfaceFormat.format == desiredSurfaceFormat.format && surfaceFormat.colorSpace == desiredSurfaceFormat.colorSpace) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+VkPresentModeKHR getPresentMode(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface) {
+	uint32_t presentModesCount;
+	VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModesCount, 0));
+
+	std::vector<VkPresentModeKHR> presentModes(presentModesCount);
+	VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModesCount, presentModes.data()));
+
+	bool immediatePresentModeSupported = false;
+	for (VkPresentModeKHR presentMode : presentModes) {
+		immediatePresentModeSupported = immediatePresentModeSupported || presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR;
+	}
+
+	return immediatePresentModeSupported ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;
+}
+
+uint32_t getSwapchainImageCount(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface) {
+	VkSurfaceCapabilitiesKHR surfaceCapabilities;
+	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
+	if (surfaceCapabilities.maxImageCount < 2 && surfaceCapabilities.maxImageCount != 0) {
+		throw std::runtime_error("Couldn't get enough swapchain images!");
+	}
+
+	uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
+	if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount) {
+		imageCount = surfaceCapabilities.minImageCount;
+	}
+
+	return imageCount;
+}
+
+VkSwapchainKHR createSwapchain(VkDevice device, VkSurfaceKHR surface, VkSurfaceFormatKHR surfaceFormat, VkPresentModeKHR presentMode, uint32_t imageCount, uint32_t graphicsQueueFamilyIndex) {
+	VkSwapchainCreateInfoKHR swapchainCreateInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
+	swapchainCreateInfo.surface = surface;
+	swapchainCreateInfo.minImageCount = imageCount;
+	swapchainCreateInfo.queueFamilyIndexCount = 1;
+	swapchainCreateInfo.pQueueFamilyIndices = &graphicsQueueFamilyIndex;
+	swapchainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+	swapchainCreateInfo.presentMode = presentMode;
+	swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	swapchainCreateInfo.imageFormat = surfaceFormat.format;
+	swapchainCreateInfo.imageColorSpace = surfaceFormat.colorSpace;
+	swapchainCreateInfo.imageExtent = VkExtent2D{ WIDTH, HEIGHT };
+	swapchainCreateInfo.imageArrayLayers = 1;
+	swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
+
+	VkSwapchainKHR swapchain = 0;
+	VK_CHECK(vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, &swapchain));
+
+	return swapchain;
+}
+
 VkShaderModule loadShader(const VkDevice device, const char* pathToSource) {
 	FILE* source;
 	fopen_s(&source, pathToSource, "rb");
@@ -205,7 +275,7 @@ int main(int argc, char* argv[]) {
 	VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfo = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
 	debugUtilsMessengerCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
 #if INFO
-	debugUtilsMessengerCreateInfo.messageSeverity = | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
+	debugUtilsMessengerCreateInfo.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
 #endif
 #if VERBOSE
 	debugUtilsMessengerCreateInfo.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
@@ -258,69 +328,18 @@ int main(int argc, char* argv[]) {
 
 	volkLoadDevice(device);
 
-	VkSurfaceCapabilitiesKHR surfaceCapabilities;
-	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
+	VkSurfaceFormatKHR surfaceFormat;
+	surfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
+	surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 
-	if (surfaceCapabilities.maxImageCount < 2 && surfaceCapabilities.maxImageCount != 0) {
-		printf("Couldn't get enough swapchain images!");
+	if (!surfaceFormatSupported(physicalDevice, surface, surfaceFormat)) {
+		printf("Requested surface format not supported!");
 		return -1;
 	}
 
-	uint32_t presentModesCount;
-	VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModesCount, 0));
-
-	std::vector<VkPresentModeKHR> presentModes(presentModesCount);
-	VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModesCount, presentModes.data()));
-
-	bool immediatePresentModeSupported = false;
-	for (VkPresentModeKHR presentMode : presentModes) {
-		immediatePresentModeSupported = immediatePresentModeSupported || presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR;
-	}
-
-	uint32_t surfaceFormatsCount;
-	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatsCount, 0));
-
-	std::vector<VkSurfaceFormatKHR> surfaceFormats(surfaceFormatsCount);
-	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatsCount, surfaceFormats.data()));
-
-	bool formatFound = false;
-	VkFormat desiredFormat = VK_FORMAT_B8G8R8A8_UNORM;
-	VkColorSpaceKHR desiredColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-	for (VkSurfaceFormatKHR surfaceFormat : surfaceFormats) {
-		if (surfaceFormat.format == desiredFormat && surfaceFormat.colorSpace == desiredColorSpace) {
-			formatFound = true;
-			break;
-		}
-	}
-
-	if (!formatFound) {
-		printf("No suitable surface format found!");
-		return -1;
-	}
-
-	uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
-	if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount) {
-		imageCount = surfaceCapabilities.minImageCount;
-	}
-
-	VkSwapchainCreateInfoKHR swapchainCreateInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
-	swapchainCreateInfo.surface = surface;
-	swapchainCreateInfo.minImageCount = imageCount;
-	swapchainCreateInfo.queueFamilyIndexCount = 1;
-	swapchainCreateInfo.pQueueFamilyIndices = &graphicsQueueFamilyIndex;
-	swapchainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-	swapchainCreateInfo.presentMode = immediatePresentModeSupported ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;
-	swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-	swapchainCreateInfo.imageFormat = desiredFormat;
-	swapchainCreateInfo.imageColorSpace = desiredColorSpace;
-	swapchainCreateInfo.imageExtent = VkExtent2D{ WIDTH, HEIGHT };
-	swapchainCreateInfo.imageArrayLayers = 1;
-	swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-	swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
-
-	VkSwapchainKHR swapchain = 0;
-	VK_CHECK(vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, &swapchain));
+	VkPresentModeKHR presentMode = getPresentMode(physicalDevice, surface);
+	uint32_t requestedSwapchainImageCount = getSwapchainImageCount(physicalDevice, surface);
+	VkSwapchainKHR swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, requestedSwapchainImageCount, graphicsQueueFamilyIndex);
 
 	uint32_t swapchainImageCount;
 	VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, 0));
@@ -332,7 +351,7 @@ int main(int argc, char* argv[]) {
 
 	VkImageViewCreateInfo imageViewCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 	imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	imageViewCreateInfo.format = desiredFormat;
+	imageViewCreateInfo.format = surfaceFormat.format;
 	imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
 	imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 	imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -349,7 +368,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	VkAttachmentDescription attachments[2] = {};
-	attachments[0].format = desiredFormat;
+	attachments[0].format = surfaceFormat.format;
 	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
 	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
