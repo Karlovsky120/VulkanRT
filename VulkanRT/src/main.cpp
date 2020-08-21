@@ -125,9 +125,11 @@ bool pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface, V
 			continue;
 		}
 
-		if (getGraphicsQueueFamilyIndex(physicalDevice) == -1) {
+		graphicsQueueIndex = getGraphicsQueueFamilyIndex(physicalDevice);
+
+		if (graphicsQueueIndex == -1) {
 			continue;
-		}
+		} 
 
 		VkBool32 presentSupported;
 		VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, graphicsQueueIndex, surface, &presentSupported));
@@ -222,7 +224,7 @@ int main(int argc, char* argv[]) {
 	VkPhysicalDevice physicalDevice = 0;
 	VkPhysicalDeviceProperties physicalDeviceProperties;
 
-	if (pickPhysicalDevice(instance, surface, physicalDevice)) {
+	if (!pickPhysicalDevice(instance, surface, physicalDevice)) {
 		printf("No suitable GPU found!");
 		return -1;
 	}
@@ -304,7 +306,9 @@ int main(int argc, char* argv[]) {
 	swapchainCreateInfo.minImageCount = imageCount;
 	swapchainCreateInfo.queueFamilyIndexCount = 1;
 	swapchainCreateInfo.pQueueFamilyIndices = &graphicsQueueFamilyIndex;
+	swapchainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 	swapchainCreateInfo.presentMode = immediatePresentModeSupported ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;
+	swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	swapchainCreateInfo.imageFormat = desiredFormat;
 	swapchainCreateInfo.imageColorSpace = desiredColorSpace;
 	swapchainCreateInfo.imageExtent = VkExtent2D{ WIDTH, HEIGHT };
@@ -350,24 +354,24 @@ int main(int argc, char* argv[]) {
 	attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-	attachments[1].format = VK_FORMAT_D32_SFLOAT;
+	attachments[1].format = VK_FORMAT_D24_UNORM_S8_UINT;
 	attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
 	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	VkAttachmentReference colorRef = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-	VkAttachmentReference depthRef = { 1, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL };
+	VkAttachmentReference depthRef = { 1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
 
 	VkSubpassDescription subpass = {};
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.colorAttachmentCount = 1;
 	subpass.pColorAttachments = &colorRef;
-	subpass.pDepthStencilAttachment = &depthRef;
+	//TODO enable depth attachment later subpass.pDepthStencilAttachment = &depthRef;
 
 	VkRenderPassCreateInfo renderPassCreateInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
-	renderPassCreateInfo.attachmentCount = ARRAYSIZE(attachments);
+	renderPassCreateInfo.attachmentCount = 1; //TODO: enable depth attachment later: ARRAYSIZE(attachments);
 	renderPassCreateInfo.pAttachments = attachments;
 	renderPassCreateInfo.subpassCount = 1;
 	renderPassCreateInfo.pSubpasses = &subpass;
