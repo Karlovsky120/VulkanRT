@@ -65,7 +65,7 @@ VkInstance createInstance() {
 
 	VkInstance instance = 0;
 
-	VK_CHECK(vkCreateInstance(&createInfo, 0, &instance));
+	VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance));
 
 	return instance;
 }
@@ -150,7 +150,7 @@ VkShaderModule loadShader(const VkDevice device, const char* pathToSource) {
 	createInfo.pCode = reinterpret_cast<uint32_t*>(buffer);
 
 	VkShaderModule shaderModule = 0;
-	VK_CHECK(vkCreateShaderModule(device, &createInfo, 0, &shaderModule));
+	VK_CHECK(vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule));
 
 	delete[] buffer;
 
@@ -191,11 +191,11 @@ int main(int argc, char* argv[]) {
 	debugReportCallbackCreateInfo.pfnCallback = debugReportCallback;
 
 	VkDebugReportCallbackEXT debugReportCallback = 0;
-	VK_CHECK(vkCreateDebugReportCallbackEXT(instance, &debugReportCallbackCreateInfo, 0, &debugReportCallback));
+	VK_CHECK(vkCreateDebugReportCallbackEXT(instance, &debugReportCallbackCreateInfo, nullptr, &debugReportCallback));
 #endif
 
 	VkSurfaceKHR surface = 0;
-	if (glfwCreateWindowSurface(instance, window, 0, &surface) != VK_SUCCESS) {
+	if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
 		printf("Failed to create window surface!");
 		return -1;
 	}
@@ -231,7 +231,7 @@ int main(int argc, char* argv[]) {
 	deviceCreateInfo.ppEnabledExtensionNames = &deviceExtensions;
 
 	VkDevice device = 0;
-	VK_CHECK(vkCreateDevice(physicalDevice, &deviceCreateInfo, 0, &device));
+	VK_CHECK(vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device));
 
 	volkLoadDevice(device);
 
@@ -295,7 +295,7 @@ int main(int argc, char* argv[]) {
 	swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
 
 	VkSwapchainKHR swapchain = 0;
-	VK_CHECK(vkCreateSwapchainKHR(device, &swapchainCreateInfo, 0, &swapchain));
+	VK_CHECK(vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, &swapchain));
 
 	uint32_t swapchainImageCount;
 	VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, 0));
@@ -320,7 +320,7 @@ int main(int argc, char* argv[]) {
 
 	for (size_t i = 0; i < swapchainImageCount; ++i) {
 		imageViewCreateInfo.image = swapchainImages[i];
-		VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, 0, &swapchainImageViews[i]));
+		VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &swapchainImageViews[i]));
 	}
 
 	VkAttachmentDescription attachments[2] = {};
@@ -354,7 +354,7 @@ int main(int argc, char* argv[]) {
 	renderPassCreateInfo.pSubpasses = &subpass;
 
 	VkRenderPass renderPass = 0;
-	VK_CHECK(vkCreateRenderPass(device, &renderPassCreateInfo, 0, &renderPass));
+	VK_CHECK(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &renderPass));
 
 	VkFramebufferCreateInfo framebufferCreateInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
 	framebufferCreateInfo.renderPass = renderPass;
@@ -366,7 +366,7 @@ int main(int argc, char* argv[]) {
 	std::vector<VkFramebuffer> framebuffers(swapchainImageCount);
 	for (size_t i = 0; i < swapchainImageCount; ++i) {
 		framebufferCreateInfo.pAttachments = &swapchainImageViews[i];
-		VK_CHECK(vkCreateFramebuffer(device, &framebufferCreateInfo, 0, &framebuffers[i]));
+		VK_CHECK(vkCreateFramebuffer(device, &framebufferCreateInfo, nullptr, &framebuffers[i]));
 	}
 
 	VkShaderModule vertexShader = loadShader(device, "src/shaders/spirv/vertexShader.spv");
@@ -376,12 +376,12 @@ int main(int argc, char* argv[]) {
 	pipelineCacheCreateInfo.initialDataSize = 0;
 
 	VkPipelineCache pipelineCache = 0;
-	VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, 0, &pipelineCache));
+	VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
 
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
 
 	VkPipelineLayout pipelineLayout = 0;
-	VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, 0, &pipelineLayout));
+	VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
 
 	VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
 
@@ -449,7 +449,7 @@ int main(int argc, char* argv[]) {
 	pipelineCreateInfo.renderPass = renderPass;
 
 	VkPipeline pipeline = 0;
-	VK_CHECK(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, 0, &pipeline));
+	VK_CHECK(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipeline));
 
 	vkDestroyShaderModule(device, fragmentShader, 0);
 	vkDestroyShaderModule(device, vertexShader, 0);
@@ -459,7 +459,7 @@ int main(int argc, char* argv[]) {
 	commandPoolCreateInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
 
 	VkCommandPool commandPool = 0;
-	VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, 0, &commandPool));
+	VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPool));
 
 
 
