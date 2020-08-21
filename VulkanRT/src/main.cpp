@@ -473,6 +473,41 @@ void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, co
 	}
 }
 
+void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface, const VkPipeline pipeline, VkSwapchainKHR& swapchain, std::vector<VkImageView>& swapchainImageViews, VkRenderPass& renderPass, VkCommandPool& commandPool, std::vector<VkCommandBuffer>& commandBuffers, std::vector<VkFramebuffer>& framebuffers, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex) {
+
+	int width = 0;
+	int height = 0;
+	do {
+		glfwGetFramebufferSize(window, &width, &height);
+		glfwWaitEvents();
+	} while (width == 0 || height == 0);
+
+	vkDeviceWaitIdle(device);
+
+	for (VkFramebuffer& framebuffer : framebuffers) {
+		vkDestroyFramebuffer(device, framebuffer, nullptr);
+	}
+
+	vkFreeCommandBuffers(device, commandPool, commandBuffers.size(), commandBuffers.data());
+	vkDestroyRenderPass(device, renderPass, nullptr);
+
+	for (VkImageView& imageView : swapchainImageViews) {
+		vkDestroyImageView(device, imageView, nullptr);
+	}
+
+	vkDestroySwapchainKHR(device, swapchain, nullptr);
+
+	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
+	surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
+
+	swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent);
+	swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
+	renderPass = createRenderPass(device, surfaceFormat.format);
+	commandBuffers = allocateCommandBuffers(device, commandPool, swapchainImageCount);
+	framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, surfaceExtent);
+	recordCommandBuffers(commandBuffers, renderPass, framebuffers, surfaceExtent, pipeline);
+}
+
 int main(int argc, char* argv[]) {
 
 	if (!glfwInit()) {
@@ -658,7 +693,15 @@ int main(int argc, char* argv[]) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
 		uint32_t imageIndex;
-		vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+		VkResult acquireResult = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+		if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
+			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, swapchain, swapchainImageViews, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
+
+			continue;
+		}
+		else if (acquireResult != VK_SUBOPTIMAL_KHR) {
+			VK_CHECK(acquireResult);
+		}
 
 		if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
 			vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
@@ -687,7 +730,15 @@ int main(int argc, char* argv[]) {
 		presentInfo.pSwapchains = &swapchain;
 		presentInfo.pImageIndices = &imageIndex;
 
-		vkQueuePresentKHR(queue, &presentInfo);
+		VkResult presentResult = vkQueuePresentKHR(queue, &presentInfo);
+		if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, swapchain, swapchainImageViews, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
+
+			continue;
+		}
+		else {
+			VK_CHECK(presentResult);
+		}
 
 		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
