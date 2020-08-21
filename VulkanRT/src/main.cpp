@@ -35,7 +35,7 @@ static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBit
 		(messageTypes & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) ? "VALIDATION" :
 		"PERFORMANCE";
 
-	printf("%s-%s: %s\n", severity, type, pCallbackData->pMessage);
+	printf("%s-%s: %s\n\n", severity, type, pCallbackData->pMessage);
 
 	return VK_FALSE;
 }
@@ -372,11 +372,21 @@ int main(int argc, char* argv[]) {
 	subpass.pColorAttachments = &colorRef;
 	//TODO enable depth attachment later subpass.pDepthStencilAttachment = &depthRef;
 
+	VkSubpassDependency subpassDependency = {};
+	subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	subpassDependency.dstSubpass = 0;
+	subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpassDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpassDependency.srcAccessMask = 0;
+	subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
 	VkRenderPassCreateInfo renderPassCreateInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
 	renderPassCreateInfo.attachmentCount = 1; //TODO: enable depth attachment later: ARRAYSIZE(attachments);
 	renderPassCreateInfo.pAttachments = attachments;
 	renderPassCreateInfo.subpassCount = 1;
 	renderPassCreateInfo.pSubpasses = &subpass;
+	renderPassCreateInfo.dependencyCount = 1;
+	renderPassCreateInfo.pDependencies = &subpassDependency;
 
 	VkRenderPass renderPass = 0;
 	VK_CHECK(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &renderPass));
@@ -509,7 +519,7 @@ int main(int argc, char* argv[]) {
 	renderPassBeginInfo.clearValueCount = 1;
 	renderPassBeginInfo.pClearValues = &clearColor;
 
-	VkViewport viewport;
+	VkViewport viewport = {};
 	viewport.width = WIDTH;
 	viewport.height = HEIGHT;
 	viewport.x = 0;
@@ -517,7 +527,7 @@ int main(int argc, char* argv[]) {
 	viewport.minDepth = 1.0f;
 	viewport.maxDepth = 0.0f;
 
-	VkRect2D scissor;
+	VkRect2D scissor = {};
 	scissor.offset = { 0, 0 };
 	scissor.extent = { WIDTH, HEIGHT };
 
