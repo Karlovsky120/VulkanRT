@@ -470,8 +470,8 @@ int main(int argc, char* argv[]) {
 	VkPipeline pipeline = 0;
 	VK_CHECK(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipeline));
 
-	vkDestroyShaderModule(device, fragmentShader, 0);
-	vkDestroyShaderModule(device, vertexShader, 0);
+	vkDestroyShaderModule(device, fragmentShader, nullptr);
+	vkDestroyShaderModule(device, vertexShader, nullptr);
 
 	VkCommandPoolCreateInfo commandPoolCreateInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 	commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -486,30 +486,30 @@ int main(int argc, char* argv[]) {
 		glfwPollEvents();
 	}
 
-	vkDestroyCommandPool(device, commandPool, 0);
-	vkDestroyPipeline(device, pipeline, 0);
-	vkDestroyPipelineLayout(device, pipelineLayout, 0);
-	vkDestroyPipelineCache(device, pipelineCache, 0);
+	vkDestroyCommandPool(device, commandPool, nullptr);
+	vkDestroyPipeline(device, pipeline, nullptr);
+	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+	vkDestroyPipelineCache(device, pipelineCache, nullptr);
 
 	for (size_t i = 0; i < swapchainImageCount; ++i) {
-		vkDestroyFramebuffer(device, framebuffers[i], 0);
+		vkDestroyFramebuffer(device, framebuffers[i], nullptr);
 	}
 
-	vkDestroyRenderPass(device, renderPass, 0);
+	vkDestroyRenderPass(device, renderPass, nullptr);
 
 	for (size_t i = 0; i < swapchainImageCount; ++i) {
-		vkDestroyImageView(device, swapchainImageViews[i], 0);
+		vkDestroyImageView(device, swapchainImageViews[i], nullptr);
 	}
 
-	vkDestroySwapchainKHR(device, swapchain, 0);
-	vkDestroyDevice(device, 0);
-	vkDestroySurfaceKHR(instance, surface, 0);
+	vkDestroySwapchainKHR(device, swapchain, nullptr);
+	vkDestroyDevice(device, nullptr);
+	vkDestroySurfaceKHR(instance, surface, nullptr);
 
 #ifdef _DEBUG
-	vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, 0);
+	vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
 #endif
 
-	vkDestroyInstance(instance, 0);
+	vkDestroyInstance(instance, nullptr);
 
 	glfwTerminate();
 
