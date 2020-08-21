@@ -163,6 +163,17 @@ bool surfaceFormatSupported(const VkPhysicalDevice physicalDevice, const VkSurfa
 	return false;
 }
 
+VkExtent2D getSurfaceExtent(GLFWwindow* window, const VkSurfaceCapabilitiesKHR surfaceCapabilities) {
+	if (surfaceCapabilities.currentExtent.width != UINT32_MAX) {
+		return surfaceCapabilities.currentExtent;
+	}
+
+	int width, height;
+	glfwGetFramebufferSize(window, &width, &height);
+
+	return { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
+}
+
 VkPresentModeKHR getPresentMode(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface) {
 	uint32_t presentModesCount;
 	VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModesCount, 0));
@@ -178,9 +189,7 @@ VkPresentModeKHR getPresentMode(const VkPhysicalDevice physicalDevice, const VkS
 	return immediatePresentModeSupported ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;
 }
 
-uint32_t getSwapchainImageCount(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface) {
-	VkSurfaceCapabilitiesKHR surfaceCapabilities;
-	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
+uint32_t getSwapchainImageCount(const VkSurfaceCapabilitiesKHR surfaceCapabilities) {
 	if (surfaceCapabilities.maxImageCount < 2 && surfaceCapabilities.maxImageCount != 0) {
 		throw std::runtime_error("Couldn't get enough swapchain images!");
 	}
@@ -193,7 +202,7 @@ uint32_t getSwapchainImageCount(const VkPhysicalDevice physicalDevice, const VkS
 	return imageCount;
 }
 
-VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t imageCount, const uint32_t graphicsQueueFamilyIndex) {
+VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t imageCount, const uint32_t graphicsQueueFamilyIndex, const VkExtent2D imageExtent) {
 	VkSwapchainCreateInfoKHR swapchainCreateInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
 	swapchainCreateInfo.surface = surface;
 	swapchainCreateInfo.minImageCount = imageCount;
@@ -204,7 +213,7 @@ VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface
 	swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	swapchainCreateInfo.imageFormat = surfaceFormat.format;
 	swapchainCreateInfo.imageColorSpace = surfaceFormat.colorSpace;
-	swapchainCreateInfo.imageExtent = VkExtent2D{ WIDTH, HEIGHT };
+	swapchainCreateInfo.imageExtent = imageExtent;
 	swapchainCreateInfo.imageArrayLayers = 1;
 	swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -293,12 +302,12 @@ VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceForma
 	return renderPass;
 }
 
-std::vector<VkFramebuffer> createFramebuffers(const VkDevice device, const VkRenderPass renderPass, const uint32_t swapchainImageCount, const std::vector<VkImageView>& swapchainImageViews) {
+std::vector<VkFramebuffer> createFramebuffers(const VkDevice device, const VkRenderPass renderPass, const uint32_t swapchainImageCount, const std::vector<VkImageView>& swapchainImageViews, const VkExtent2D framebufferArea) {
 	VkFramebufferCreateInfo framebufferCreateInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
 	framebufferCreateInfo.renderPass = renderPass;
 	framebufferCreateInfo.attachmentCount = 1;
-	framebufferCreateInfo.width = WIDTH;
-	framebufferCreateInfo.height = HEIGHT;
+	framebufferCreateInfo.width = framebufferArea.width;
+	framebufferCreateInfo.height = framebufferArea.height;
 	framebufferCreateInfo.layers = 1;
 
 	std::vector<VkFramebuffer> framebuffers(swapchainImageCount);
@@ -417,23 +426,25 @@ std::vector<VkCommandBuffer> allocateCommandBuffers(const VkDevice device, const
 	commandBufferAllocateInfo.commandBufferCount = commandBuffers.size();
 
 	VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, commandBuffers.data()));
+
+	return commandBuffers;
 }
 
-void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, const VkRenderPass renderPass, const std::vector<VkFramebuffer>& framebuffers, const VkPipeline pipeline) {
+void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, const VkRenderPass renderPass, const std::vector<VkFramebuffer>& framebuffers, const VkExtent2D renderArea, const VkPipeline pipeline) {
 	VkCommandBufferBeginInfo commandBufferBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 
 	VkRenderPassBeginInfo renderPassBeginInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
 	renderPassBeginInfo.renderPass = renderPass;
 	renderPassBeginInfo.renderArea.offset = { 0, 0 };
-	renderPassBeginInfo.renderArea.extent = VkExtent2D{ WIDTH, HEIGHT };
+	renderPassBeginInfo.renderArea.extent = renderArea;
 
 	VkClearValue clearColor = { 0.0f, 0.0f, 0.1f, 1.0f };
 	renderPassBeginInfo.clearValueCount = 1;
 	renderPassBeginInfo.pClearValues = &clearColor;
 
 	VkViewport viewport = {};
-	viewport.width = WIDTH;
-	viewport.height = HEIGHT;
+	viewport.width = renderArea.width;
+	viewport.height = renderArea.height;
 	viewport.x = 0;
 	viewport.y = 0;
 	viewport.minDepth = 1.0f;
@@ -441,7 +452,7 @@ void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, co
 
 	VkRect2D scissor = {};
 	scissor.offset = { 0, 0 };
-	scissor.extent = { WIDTH, HEIGHT };
+	scissor.extent = renderArea;
 
 	for (size_t i = 0; i < commandBuffers.size(); ++i) {
 		VK_CHECK(vkBeginCommandBuffer(commandBuffers[i], &commandBufferBeginInfo));
@@ -521,7 +532,7 @@ int main(int argc, char* argv[]) {
 		physicalDevice = pickPhysicalDevice(instance, surface);
 	}
 	catch (std::runtime_error& e) {
-		printf("%s", e.what);
+		printf("%s", e.what());
 
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyInstance(instance, nullptr);
@@ -568,23 +579,28 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	VkSurfaceCapabilitiesKHR surfaceCapabilities;
+	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
+
 	uint32_t requestedSwapchainImageCount;
 	try {
-		requestedSwapchainImageCount = getSwapchainImageCount(physicalDevice, surface);
+		requestedSwapchainImageCount = getSwapchainImageCount(surfaceCapabilities);
 	}
 	catch (std::runtime_error& e) {
-		printf("%s", e.what);
+		printf("%s", e.what());
 	}
 
+	VkExtent2D surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
+
 	VkPresentModeKHR presentMode = getPresentMode(physicalDevice, surface);
-	VkSwapchainKHR swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, requestedSwapchainImageCount, graphicsQueueFamilyIndex);
+	VkSwapchainKHR swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, requestedSwapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent);
 
 	std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
 	uint32_t swapchainImageCount = swapchainImageViews.size();
 
 	VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
 
-	std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews);
+	std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, surfaceExtent);
 
 	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
 	pipelineCacheCreateInfo.initialDataSize = 0;
@@ -617,7 +633,7 @@ int main(int argc, char* argv[]) {
 
 	std::vector<VkCommandBuffer> commandBuffers = allocateCommandBuffers(device, commandPool, swapchainImageCount);
 
-	recordCommandBuffers(commandBuffers, renderPass, framebuffers, pipeline);
+	recordCommandBuffers(commandBuffers, renderPass, framebuffers, surfaceExtent, pipeline);
 
 	std::vector<VkSemaphore> imageAvailableSemaphores(MAX_FRAMES_IN_FLIGHT);
 	std::vector<VkSemaphore> renderFinishedSemaphores(MAX_FRAMES_IN_FLIGHT);
