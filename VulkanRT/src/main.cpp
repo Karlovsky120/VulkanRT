@@ -1,9 +1,16 @@
-#pragma warning( disable : 26812) // Prefer 'enum class' over 'enum'.
+#pragma warning(disable: 26812) // Prefer 'enum class' over 'enum'.
+
+#ifndef _DEBUG
+#pragma warning(disable: 4189) // Local variable is initialized but not references (caused by asserts being removed from VK_CHECK)
+#pragma warning(disable: 4710)
+#pragma warning(disable: 4711)
+#endif
 
 #define VK_ENABLE_BETA_EXTENSIONS
 #define VOLK_IMPLEMENTATION
 #define GLFW_INCLUDE_VULKAN
 
+#pragma warning(push, 0)
 #include "volk.h"
 #include "glfw3.h"
 
@@ -11,8 +18,10 @@
 #include <cstdio>
 #include <stdexcept>
 #include <vector>
+#pragma warning(pop)
 
 #define ARRAYSIZE(object) sizeof(object)/sizeof(object[0])
+
 #define VK_CHECK(call) { VkResult result = call; assert(result == VK_SUCCESS); }
 
 #define API_DUMP 0
@@ -24,6 +33,8 @@
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
+#ifdef _DEBUG
+#pragma warning(suppress : 4100) // Unreferenced formal parameter (pUserData)
 static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
 	const char* severity =
 		(messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ? "ERROR" :
@@ -40,6 +51,7 @@ static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBit
 
 	return VK_FALSE;
 }
+#endif
 
 VkInstance createInstance() {
 	VkApplicationInfo applicationInfo = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
@@ -75,7 +87,7 @@ VkInstance createInstance() {
 	extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
-	createInfo.enabledExtensionCount = extensions.size();
+	createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 	createInfo.ppEnabledExtensionNames = extensions.data();
 
 	VkInstance instance = 0;
@@ -85,17 +97,17 @@ VkInstance createInstance() {
 	return instance;
 }
 
-int getGraphicsQueueFamilyIndex(const VkPhysicalDevice physicalDevice) {
+uint32_t getGraphicsQueueFamilyIndex(const VkPhysicalDevice physicalDevice) {
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, 0);
 
 	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
 	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-	uint32_t graphicsQueueFamilyIndex = -1;
+	uint32_t graphicsQueueFamilyIndex = UINT32_MAX;
 	for (size_t j = 0; j < queueFamilyCount; ++j) {
 		if (queueFamilies[j].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-			graphicsQueueFamilyIndex = j;
+			graphicsQueueFamilyIndex = static_cast<uint32_t>(j);
 			break;
 		}
 	}
@@ -110,15 +122,14 @@ VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKH
 	std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data()));
 
-	uint32_t graphicsQueueIndex = -1;
-	bool deviceFound = false;
+	uint32_t graphicsQueueIndex = UINT32_MAX;
 	for (size_t i = 0; i < physicalDeviceCount; ++i) {
 		VkPhysicalDevice physicalDevice = physicalDevices[i];
 
 		VkPhysicalDeviceProperties physicalDeviceProperties;
 		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
 
-		printf("GPU%d: %s\n", i, physicalDeviceProperties.deviceName);
+		printf("GPU%d: %s\n", static_cast<uint32_t>(i), physicalDeviceProperties.deviceName);
 
 		if (physicalDeviceProperties.apiVersion < VK_API_VERSION_1_2) {
 			continue;
@@ -130,7 +141,7 @@ VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKH
 
 		graphicsQueueIndex = getGraphicsQueueFamilyIndex(physicalDevice);
 
-		if (graphicsQueueIndex == -1) {
+		if (graphicsQueueIndex == UINT32_MAX) {
 			continue;
 		} 
 
@@ -325,7 +336,7 @@ VkShaderModule loadShader(const VkDevice device, const char* pathToSource) {
 	assert(source);
 
 	fseek(source, 0, SEEK_END);
-	size_t length = ftell(source);
+	size_t length = static_cast<size_t>(ftell(source));
 	assert(length > 0);
 	fseek(source, 0, SEEK_SET);
 
@@ -362,7 +373,7 @@ VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipeline
 	fragmentStageInfo.pName = "main";
 	shaderStages.push_back(fragmentStageInfo);
 
-	pipelineCreateInfo.stageCount = shaderStages.size();
+	pipelineCreateInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
 	pipelineCreateInfo.pStages = shaderStages.data();
 
 	VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
@@ -423,7 +434,7 @@ std::vector<VkCommandBuffer> allocateCommandBuffers(const VkDevice device, const
 	VkCommandBufferAllocateInfo commandBufferAllocateInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
 	commandBufferAllocateInfo.commandPool = commandPool;
 	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	commandBufferAllocateInfo.commandBufferCount = commandBuffers.size();
+	commandBufferAllocateInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
 
 	VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, commandBuffers.data()));
 
@@ -443,8 +454,8 @@ void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, co
 	renderPassBeginInfo.pClearValues = &clearColor;
 
 	VkViewport viewport = {};
-	viewport.width = renderArea.width;
-	viewport.height = renderArea.height;
+	viewport.width = static_cast<float>(renderArea.width);
+	viewport.height = static_cast<float>(renderArea.height);
 	viewport.x = 0;
 	viewport.y = 0;
 	viewport.minDepth = 1.0f;
@@ -488,7 +499,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
 	}
 
-	vkFreeCommandBuffers(device, commandPool, commandBuffers.size(), commandBuffers.data());
+	vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
 	for (VkImageView& imageView : swapchainImageViews) {
@@ -508,6 +519,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 	recordCommandBuffers(commandBuffers, renderPass, framebuffers, surfaceExtent, pipeline);
 }
 
+#pragma warning(suppress : 4100) // Unreferenced formal parameter (argv & argc)
 int main(int argc, char* argv[]) {
 
 	if (!glfwInit()) {
@@ -623,6 +635,7 @@ int main(int argc, char* argv[]) {
 	}
 	catch (std::runtime_error& e) {
 		printf("%s", e.what());
+		return -1;
 	}
 
 	VkExtent2D surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
@@ -631,7 +644,7 @@ int main(int argc, char* argv[]) {
 	VkSwapchainKHR swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, requestedSwapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent);
 
 	std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
-	uint32_t swapchainImageCount = swapchainImageViews.size();
+	uint32_t swapchainImageCount = static_cast<uint32_t>(swapchainImageViews.size());
 
 	VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
 
