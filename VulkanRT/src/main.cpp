@@ -14,6 +14,7 @@
 #include "volk.h"
 #include "glfw3.h"
 
+#include <array>
 #include <assert.h>
 #include <cstdio>
 #include <stdexcept>
@@ -266,11 +267,76 @@ std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, const VkS
 	return swapchainImageViews;
 }
 
+VkImage createImage(const VkDevice device, const VkExtent2D imageSize, const VkImageUsageFlags imageUsageFlags, const VkFormat imageFormat) {
+	VkImageCreateInfo depthImageCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+	depthImageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+	depthImageCreateInfo.usage = imageUsageFlags;
+	depthImageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depthImageCreateInfo.format = imageFormat;
+	depthImageCreateInfo.extent = { imageSize.width, imageSize.height, 1 };
+	depthImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	depthImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	depthImageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	depthImageCreateInfo.mipLevels = 1;
+	depthImageCreateInfo.arrayLayers = 1;
+
+	VkImage depthImage;
+	VK_CHECK(vkCreateImage(device, &depthImageCreateInfo, nullptr, &depthImage));
+
+	return depthImage;
+}
+
+VkImageView createImageView(const VkDevice device, const VkImage image, const VkFormat format, const VkImageAspectFlags aspectMask) {
+	VkImageViewCreateInfo imageViewCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	imageViewCreateInfo.image = image;
+	imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	imageViewCreateInfo.format = format;
+	imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	imageViewCreateInfo.subresourceRange.aspectMask = aspectMask;
+	imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+	imageViewCreateInfo.subresourceRange.levelCount = 1;
+	imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+	imageViewCreateInfo.subresourceRange.layerCount = 1;
+
+	VkImageView imageView;
+	VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &imageView));
+
+	return imageView;
+}
+
+VkDeviceMemory allocateImageMemory(const VkDevice device, const VkImage image, const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties) {
+	VkMemoryRequirements imageMemoryRequirements;
+	vkGetImageMemoryRequirements(device, image, &imageMemoryRequirements);
+
+	uint32_t imageMemoryType = UINT32_MAX;
+	for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; ++i) {
+		if (imageMemoryRequirements.memoryTypeBits & (1 << i)) {
+			imageMemoryType = i;
+		}
+	}
+
+	if (imageMemoryType == UINT32_MAX) {
+		throw std::runtime_error("Couldn't find memory type for depth image!");
+	}
+
+	VkMemoryAllocateInfo memoryAllocateInfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+	memoryAllocateInfo.allocationSize = imageMemoryRequirements.size;
+	memoryAllocateInfo.memoryTypeIndex = imageMemoryType;
+
+	VkDeviceMemory imageMemory;
+	VK_CHECK(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &imageMemory));
+
+	return imageMemory;
+}
+
 VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceFormat) {
 	VkAttachmentDescription attachments[2] = {};
 	attachments[0].format = surfaceFormat;
 	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -279,7 +345,9 @@ VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceForma
 	attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
 	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	VkAttachmentReference colorRef = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
@@ -289,7 +357,7 @@ VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceForma
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.colorAttachmentCount = 1;
 	subpass.pColorAttachments = &colorRef;
-	//TODO enable depth attachment later subpass.pDepthStencilAttachment = &depthRef;
+	subpass.pDepthStencilAttachment = &depthRef;
 
 	VkSubpassDependency subpassDependency = {};
 	subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -300,7 +368,7 @@ VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceForma
 	subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
 	VkRenderPassCreateInfo renderPassCreateInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
-	renderPassCreateInfo.attachmentCount = 1; //TODO: enable depth attachment later: ARRAYSIZE(attachments);
+	renderPassCreateInfo.attachmentCount = ARRAYSIZE(attachments);
 	renderPassCreateInfo.pAttachments = attachments;
 	renderPassCreateInfo.subpassCount = 1;
 	renderPassCreateInfo.pSubpasses = &subpass;
@@ -313,17 +381,18 @@ VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceForma
 	return renderPass;
 }
 
-std::vector<VkFramebuffer> createFramebuffers(const VkDevice device, const VkRenderPass renderPass, const uint32_t swapchainImageCount, const std::vector<VkImageView>& swapchainImageViews, const VkExtent2D framebufferArea) {
+std::vector<VkFramebuffer> createFramebuffers(const VkDevice device, const VkRenderPass renderPass, const uint32_t swapchainImageCount, const std::vector<VkImageView>& swapchainImageViews, const VkImageView depthImageView, const VkExtent2D framebufferArea) {
 	VkFramebufferCreateInfo framebufferCreateInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
 	framebufferCreateInfo.renderPass = renderPass;
-	framebufferCreateInfo.attachmentCount = 1;
+	framebufferCreateInfo.attachmentCount = 2;
 	framebufferCreateInfo.width = framebufferArea.width;
 	framebufferCreateInfo.height = framebufferArea.height;
 	framebufferCreateInfo.layers = 1;
 
 	std::vector<VkFramebuffer> framebuffers(swapchainImageCount);
 	for (size_t i = 0; i < swapchainImageCount; ++i) {
-		framebufferCreateInfo.pAttachments = &swapchainImageViews[i];
+		std::array<VkImageView, 2> attachments = { swapchainImageViews[i], depthImageView };
+		framebufferCreateInfo.pAttachments = attachments.data();
 		VK_CHECK(vkCreateFramebuffer(device, &framebufferCreateInfo, nullptr, &framebuffers[i]));
 	}
 
@@ -449,9 +518,11 @@ void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, co
 	renderPassBeginInfo.renderArea.offset = { 0, 0 };
 	renderPassBeginInfo.renderArea.extent = renderArea;
 
-	VkClearValue clearColor = { 0.0f, 0.0f, 0.1f, 1.0f };
-	renderPassBeginInfo.clearValueCount = 1;
-	renderPassBeginInfo.pClearValues = &clearColor;
+	VkClearValue colorImageClearColor = { 0.0f, 0.0f, 0.2f, 1.0f };
+	VkClearValue depthImageClearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+	std::array<VkClearValue, 2> imageClearColors = { colorImageClearColor, depthImageClearColor };
+	renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(imageClearColors.size());
+	renderPassBeginInfo.pClearValues = imageClearColors.data();
 
 	VkViewport viewport = {};
 	viewport.width = static_cast<float>(renderArea.width);
@@ -484,7 +555,7 @@ void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, co
 	}
 }
 
-void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface, const VkPipeline pipeline, VkSwapchainKHR& swapchain, std::vector<VkImageView>& swapchainImageViews, VkRenderPass& renderPass, VkCommandPool& commandPool, std::vector<VkCommandBuffer>& commandBuffers, std::vector<VkFramebuffer>& framebuffers, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex) {
+void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface, const VkPipeline pipeline, VkSwapchainKHR& swapchain, std::vector<VkImageView>& swapchainImageViews, VkImageView& depthImageView, VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkRenderPass& renderPass, VkCommandPool& commandPool, std::vector<VkCommandBuffer>& commandBuffers, std::vector<VkFramebuffer>& framebuffers, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent, const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex) {
 
 	int width = 0;
 	int height = 0;
@@ -502,6 +573,10 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 	vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
+	vkDestroyImageView(device, depthImageView, nullptr);
+	vkFreeMemory(device, depthImageMemory, nullptr);
+	vkDestroyImage(device, depthImage, nullptr);
+
 	for (VkImageView& imageView : swapchainImageViews) {
 		vkDestroyImageView(device, imageView, nullptr);
 	}
@@ -513,9 +588,15 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 
 	swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent);
 	swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
+
+	depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D24_UNORM_S8_UINT);
+	depthImageMemory = allocateImageMemory(device, depthImage, physicalDeviceMemoryProperties);
+	vkBindImageMemory(device, depthImage, depthImageMemory, 0);
+	depthImageView = createImageView(device, depthImage, VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
+
 	renderPass = createRenderPass(device, surfaceFormat.format);
 	commandBuffers = allocateCommandBuffers(device, commandPool, swapchainImageCount);
-	framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, surfaceExtent);
+	framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 	recordCommandBuffers(commandBuffers, renderPass, framebuffers, surfaceExtent, pipeline);
 }
 
@@ -635,6 +716,11 @@ int main(int argc, char* argv[]) {
 	}
 	catch (std::runtime_error& e) {
 		printf("%s", e.what());
+
+		vkDestroyDevice(device, nullptr);
+		vkDestroySurfaceKHR(instance, surface, nullptr);
+		vkDestroyInstance(instance, nullptr);
+
 		return -1;
 	}
 
@@ -646,9 +732,41 @@ int main(int argc, char* argv[]) {
 	std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
 	uint32_t swapchainImageCount = static_cast<uint32_t>(swapchainImageViews.size());
 
+	VkImage depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D24_UNORM_S8_UINT);
+
+	VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalDeviceMemoryProperties);
+
+	VkDeviceMemory depthImageMemory;
+	try {
+		depthImageMemory = allocateImageMemory(device, depthImage, physicalDeviceMemoryProperties);
+	}
+	catch (std::runtime_error& e) {
+		printf("%s", e.what());
+
+		vkDestroyImage(device, depthImage, nullptr);
+
+		for (VkImageView& imageView : swapchainImageViews) {
+			vkDestroyImageView(device, imageView, nullptr);
+		}
+
+		vkDestroySwapchainKHR(device, swapchain, nullptr);
+		vkDestroyImage(device, depthImage, nullptr);
+		vkDestroyDevice(device, nullptr);
+		vkDestroySurfaceKHR(instance, surface, nullptr);
+		vkDestroyInstance(instance, nullptr);
+
+		return -1;
+	}
+
+	vkBindImageMemory(device, depthImage, depthImageMemory, 0);
+
+	VkImageView depthImageView;
+	depthImageView = createImageView(device, depthImage, VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
+
 	VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
 
-	std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, surfaceExtent);
+	std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 
 	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
 	pipelineCacheCreateInfo.initialDataSize = 0;
@@ -708,7 +826,7 @@ int main(int argc, char* argv[]) {
 		uint32_t imageIndex;
 		VkResult acquireResult = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 		if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
-			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, swapchain, swapchainImageViews, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
+			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, swapchain, swapchainImageViews, depthImageView, depthImage, depthImageMemory, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
 
 			continue;
 		}
@@ -745,7 +863,7 @@ int main(int argc, char* argv[]) {
 
 		VkResult presentResult = vkQueuePresentKHR(queue, &presentInfo);
 		if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, swapchain, swapchainImageViews, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
+			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, swapchain, swapchainImageViews, depthImageView, depthImage, depthImageMemory, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
 
 			continue;
 		}
@@ -778,6 +896,10 @@ int main(int argc, char* argv[]) {
 	for (VkFramebuffer& framebuffer : framebuffers) {
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
 	}
+
+	vkDestroyImageView(device, depthImageView, nullptr);
+	vkDestroyImage(device, depthImage, nullptr);
+	vkFreeMemory(device, depthImageMemory, nullptr);
 
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
