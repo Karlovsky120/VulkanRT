@@ -214,7 +214,7 @@ uint32_t getSwapchainImageCount(const VkSurfaceCapabilitiesKHR surfaceCapabiliti
 	return imageCount;
 }
 
-VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t imageCount, const uint32_t graphicsQueueFamilyIndex, const VkExtent2D imageExtent) {
+VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t imageCount, const uint32_t graphicsQueueFamilyIndex, const VkExtent2D imageExtent, const VkSwapchainKHR oldSwapchain) {
 	VkSwapchainCreateInfoKHR swapchainCreateInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
 	swapchainCreateInfo.surface = surface;
 	swapchainCreateInfo.minImageCount = imageCount;
@@ -229,7 +229,7 @@ VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface
 	swapchainCreateInfo.imageArrayLayers = 1;
 	swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-	swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
+	swapchainCreateInfo.oldSwapchain = oldSwapchain;
 
 	VkSwapchainKHR swapchain = 0;
 	VK_CHECK(vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, &swapchain));
@@ -581,12 +581,13 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 		vkDestroyImageView(device, imageView, nullptr);
 	}
 
-	vkDestroySwapchainKHR(device, swapchain, nullptr);
-
 	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
 	surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
 
-	swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent);
+	VkSwapchainKHR newSwapchain = createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent, swapchain);
+	vkDestroySwapchainKHR(device, swapchain, nullptr);
+	swapchain = newSwapchain;
+
 	swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
 
 	depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D24_UNORM_S8_UINT);
@@ -727,7 +728,7 @@ int main(int argc, char* argv[]) {
 	VkExtent2D surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
 
 	VkPresentModeKHR presentMode = getPresentMode(physicalDevice, surface);
-	VkSwapchainKHR swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, requestedSwapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent);
+	VkSwapchainKHR swapchain = createSwapchain(device, surface, surfaceFormat, presentMode, requestedSwapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent, VK_NULL_HANDLE);
 
 	std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
 	uint32_t swapchainImageCount = static_cast<uint32_t>(swapchainImageViews.size());
