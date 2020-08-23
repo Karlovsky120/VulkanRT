@@ -9,10 +9,13 @@
 #define VK_ENABLE_BETA_EXTENSIONS
 #define VOLK_IMPLEMENTATION
 #define GLFW_INCLUDE_VULKAN
+#define GLM_FORCE_RADIANS
+#define GLM_CONFIG_XYZW_ONLY
 
 #pragma warning(push, 0)
 #include "volk.h"
 #include "glfw3.h"
+#include "glm/fwd.hpp"
 
 #include <array>
 #include <assert.h>
