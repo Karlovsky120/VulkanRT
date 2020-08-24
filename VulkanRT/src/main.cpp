@@ -271,22 +271,34 @@ std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, const VkS
 }
 
 VkImage createImage(const VkDevice device, const VkExtent2D imageSize, const VkImageUsageFlags imageUsageFlags, const VkFormat imageFormat) {
-	VkImageCreateInfo depthImageCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
-	depthImageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-	depthImageCreateInfo.usage = imageUsageFlags;
-	depthImageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	depthImageCreateInfo.format = imageFormat;
-	depthImageCreateInfo.extent = { imageSize.width, imageSize.height, 1 };
-	depthImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-	depthImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-	depthImageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	depthImageCreateInfo.mipLevels = 1;
-	depthImageCreateInfo.arrayLayers = 1;
+	VkImageCreateInfo imageCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+	imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageCreateInfo.usage = imageUsageFlags;
+	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageCreateInfo.format = imageFormat;
+	imageCreateInfo.extent = { imageSize.width, imageSize.height, 1 };
+	imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageCreateInfo.mipLevels = 1;
+	imageCreateInfo.arrayLayers = 1;
 
-	VkImage depthImage;
-	VK_CHECK(vkCreateImage(device, &depthImageCreateInfo, nullptr, &depthImage));
+	VkImage image = 0;
+	VK_CHECK(vkCreateImage(device, &imageCreateInfo, nullptr, &image));
 
-	return depthImage;
+	return image;
+}
+
+VkBuffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, const VkBufferUsageFlags bufferUsageFlags) {
+	VkBufferCreateInfo bufferCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+	bufferCreateInfo.size = bufferSize;
+	bufferCreateInfo.usage = bufferUsageFlags;
+	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VkBuffer buffer = 0;
+	VK_CHECK(vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer));
+	
+	return buffer;
 }
 
 VkImageView createImageView(const VkDevice device, const VkImage image, const VkFormat format, const VkImageAspectFlags aspectMask) {
@@ -304,35 +316,36 @@ VkImageView createImageView(const VkDevice device, const VkImage image, const Vk
 	imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
 	imageViewCreateInfo.subresourceRange.layerCount = 1;
 
-	VkImageView imageView;
+	VkImageView imageView = 0;
 	VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &imageView));
 
 	return imageView;
 }
 
-VkDeviceMemory allocateImageMemory(const VkDevice device, const VkImage image, const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties) {
-	VkMemoryRequirements imageMemoryRequirements;
-	vkGetImageMemoryRequirements(device, image, &imageMemoryRequirements);
-
-	uint32_t imageMemoryType = UINT32_MAX;
+VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements memoryRequirements, const VkMemoryPropertyFlags memoryPropertyFlags, const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties) {
+	uint32_t memoryType = UINT32_MAX;
 	for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; ++i) {
-		if (imageMemoryRequirements.memoryTypeBits & (1 << i)) {
-			imageMemoryType = i;
+		bool memoryIsOfRequiredType = memoryRequirements.memoryTypeBits & (1 << i);
+		bool memoryHasDesiredPropertyFlags = (physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags;
+
+		if (memoryIsOfRequiredType && memoryHasDesiredPropertyFlags) {
+			memoryType = i;
+			break;
 		}
 	}
 
-	if (imageMemoryType == UINT32_MAX) {
+	if (memoryType == UINT32_MAX) {
 		throw std::runtime_error("Couldn't find memory type for depth image!");
 	}
 
 	VkMemoryAllocateInfo memoryAllocateInfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
-	memoryAllocateInfo.allocationSize = imageMemoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = imageMemoryType;
+	memoryAllocateInfo.allocationSize = memoryRequirements.size;
+	memoryAllocateInfo.memoryTypeIndex = memoryType;
 
-	VkDeviceMemory imageMemory;
-	VK_CHECK(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &imageMemory));
+	VkDeviceMemory memory = 0;
+	VK_CHECK(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &memory));
 
-	return imageMemory;
+	return memory;
 }
 
 VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceFormat) {
@@ -594,7 +607,9 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 	swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
 
 	depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D24_UNORM_S8_UINT);
-	depthImageMemory = allocateImageMemory(device, depthImage, physicalDeviceMemoryProperties);
+	VkMemoryRequirements depthImageMemoryRequirements;
+	vkGetImageMemoryRequirements(device, depthImage, &depthImageMemoryRequirements);
+	depthImageMemory = allocateVulkanObjectMemory(device, depthImageMemoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physicalDeviceMemoryProperties);
 	vkBindImageMemory(device, depthImage, depthImageMemory, 0);
 	depthImageView = createImageView(device, depthImage, VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
@@ -743,7 +758,9 @@ int main(int argc, char* argv[]) {
 
 	VkDeviceMemory depthImageMemory;
 	try {
-		depthImageMemory = allocateImageMemory(device, depthImage, physicalDeviceMemoryProperties);
+		VkMemoryRequirements depthImageMemoryRequirements;
+		vkGetImageMemoryRequirements(device, depthImage, &depthImageMemoryRequirements);
+		depthImageMemory = allocateVulkanObjectMemory(device, depthImageMemoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physicalDeviceMemoryProperties);
 	}
 	catch (std::runtime_error& e) {
 		printf("%s", e.what());
@@ -767,6 +784,54 @@ int main(int argc, char* argv[]) {
 
 	VkImageView depthImageView;
 	depthImageView = createImageView(device, depthImage, VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+	std::vector<float> cubeVertices = {
+		0.5, -0.5, -0.5,
+		0.5, -0.5, 0.5,
+		-0.5, -0.5, 0.5,
+		-0.5, -0.5, -0.5,
+		0.5, 0.5, -0.5,
+		0.5, 0.5, 0.5,
+		-0.5, 0.5, 0.5,
+		-0.5, 0.5, -0.5
+	};
+
+	uint32_t vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
+
+	VkBuffer vertexBuffer = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+	VkMemoryRequirements vertexBufferMemoryRequirements;
+	vkGetBufferMemoryRequirements(device, vertexBuffer, &vertexBufferMemoryRequirements);
+
+	VkDeviceMemory vertexBufferMemory = allocateVulkanObjectMemory(device, vertexBufferMemoryRequirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, physicalDeviceMemoryProperties);
+	vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+	void* vertexBufferPointer;
+	vkMapMemory(device, vertexBufferMemory, 0, vertexBufferSize, 0, &vertexBufferPointer);
+	memcpy(vertexBufferPointer, cubeVertices.data(), vertexBufferSize);
+	vkUnmapMemory(device, vertexBufferMemory);
+
+	std::vector<uint16_t> cubeIndices = {
+		0, 1, 3, 3, 1, 2,
+		1, 5, 2, 2, 5, 6,
+		5, 4, 6, 6, 4, 7,
+		4, 0, 7, 7, 0, 3,
+		3, 2, 7, 7, 2, 6,
+		4, 5, 0, 0, 5, 1
+	};
+
+	uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
+
+	VkBuffer indexBuffer = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	VkMemoryRequirements indexBufferMemoryRequirements;
+	vkGetBufferMemoryRequirements(device, indexBuffer, &indexBufferMemoryRequirements);
+
+	VkDeviceMemory indexBufferMemory = allocateVulkanObjectMemory(device, indexBufferMemoryRequirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, physicalDeviceMemoryProperties);
+	vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0);
+
+	void* indexBufferPointer;
+	vkMapMemory(device, indexBufferMemory, 0, indexBufferSize, 0, &indexBufferPointer);
+	memcpy(indexBufferPointer, cubeIndices.data(), indexBufferSize);
+	vkUnmapMemory(device, indexBufferMemory);
 
 	VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
 
@@ -904,6 +969,12 @@ int main(int argc, char* argv[]) {
 	vkDestroyImageView(device, depthImageView, nullptr);
 	vkDestroyImage(device, depthImage, nullptr);
 	vkFreeMemory(device, depthImageMemory, nullptr);
+
+	vkDestroyBuffer(device, indexBuffer, nullptr);
+	vkFreeMemory(device, indexBufferMemory, nullptr);
+
+	vkDestroyBuffer(device, vertexBuffer, nullptr);
+	vkFreeMemory(device, vertexBufferMemory, nullptr);
 
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
