@@ -871,6 +871,18 @@ int main(int argc, char* argv[]) {
 	vkDestroyShaderModule(device, fragmentShader, nullptr);
 	vkDestroyShaderModule(device, vertexShader, nullptr);
 
+	VkDescriptorPoolSize descriptorPoolSize;
+	descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	descriptorPoolSize.descriptorCount = 1;
+
+	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+	descriptorPoolCreateInfo.poolSizeCount = 1;
+	descriptorPoolCreateInfo.pPoolSizes = &descriptorPoolSize;
+	descriptorPoolCreateInfo.maxSets = 1;
+	
+	VkDescriptorPool descriptorPool;
+	VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &descriptorPool));
+
 	VkQueue queue;
 	vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &queue);
 
@@ -973,6 +985,8 @@ int main(int argc, char* argv[]) {
 	}
 
 	vkDestroyCommandPool(device, commandPool, nullptr);
+	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+
 	vkDestroyPipeline(device, pipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 	vkDestroyPipelineCache(device, pipelineCache, nullptr);
