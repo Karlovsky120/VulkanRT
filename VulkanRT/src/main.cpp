@@ -785,6 +785,10 @@ int main(int argc, char* argv[]) {
 	VkImageView depthImageView;
 	depthImageView = createImageView(device, depthImage, VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
+	VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
+
+	std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
+
 	std::vector<float> cubeVertices = {
 		0.5, -0.5, -0.5,
 		0.5, -0.5, 0.5,
@@ -833,9 +837,18 @@ int main(int argc, char* argv[]) {
 	memcpy(indexBufferPointer, cubeIndices.data(), indexBufferSize);
 	vkUnmapMemory(device, indexBufferMemory);
 
-	VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
+	VkDescriptorSetLayoutBinding descriptorSetLayoutBinding;
+	descriptorSetLayoutBinding.binding = 0;
+	descriptorSetLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	descriptorSetLayoutBinding.descriptorCount = 2;
+	descriptorSetLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-	std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
+	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+	descriptorSetLayoutCreateInfo.bindingCount = 1;
+	descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
+
+	VkDescriptorSetLayout descriptorSetLayout;
+	VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout));
 
 	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
 	pipelineCacheCreateInfo.initialDataSize = 0;
@@ -844,6 +857,8 @@ int main(int argc, char* argv[]) {
 	VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
 
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+	pipelineLayoutCreateInfo.setLayoutCount = 1;
+	pipelineLayoutCreateInfo.pSetLayouts = &descriptorSetLayout;
 
 	VkPipelineLayout pipelineLayout = 0;
 	VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
@@ -962,6 +977,14 @@ int main(int argc, char* argv[]) {
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 	vkDestroyPipelineCache(device, pipelineCache, nullptr);
 
+	vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+
+	vkDestroyBuffer(device, indexBuffer, nullptr);
+	vkFreeMemory(device, indexBufferMemory, nullptr);
+
+	vkDestroyBuffer(device, vertexBuffer, nullptr);
+	vkFreeMemory(device, vertexBufferMemory, nullptr);
+
 	for (VkFramebuffer& framebuffer : framebuffers) {
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
 	}
@@ -969,12 +992,6 @@ int main(int argc, char* argv[]) {
 	vkDestroyImageView(device, depthImageView, nullptr);
 	vkDestroyImage(device, depthImage, nullptr);
 	vkFreeMemory(device, depthImageMemory, nullptr);
-
-	vkDestroyBuffer(device, indexBuffer, nullptr);
-	vkFreeMemory(device, indexBufferMemory, nullptr);
-
-	vkDestroyBuffer(device, vertexBuffer, nullptr);
-	vkFreeMemory(device, vertexBufferMemory, nullptr);
 
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
