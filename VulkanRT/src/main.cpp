@@ -476,7 +476,7 @@ VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipeline
 	VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
 	rasterizationStateCreateInfo.lineWidth = 1.0f;
 	rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
-	rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_NONE; //VK_CULL_MODE_BACK_BIT;
 	pipelineCreateInfo.pRasterizationState = &rasterizationStateCreateInfo;
 
 	VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
@@ -526,7 +526,7 @@ std::vector<VkCommandBuffer> allocateCommandBuffers(const VkDevice device, const
 	return commandBuffers;
 }
 
-void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, const VkRenderPass renderPass, const std::vector<VkFramebuffer>& framebuffers, const VkExtent2D renderArea, const VkPipeline pipeline) {
+void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, const VkRenderPass renderPass, const std::vector<VkFramebuffer>& framebuffers, const VkExtent2D renderArea, const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet) {
 	VkCommandBufferBeginInfo commandBufferBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 
 	VkRenderPassBeginInfo renderPassBeginInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
@@ -562,6 +562,7 @@ void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, co
 		vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+		vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
 		vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 
@@ -571,7 +572,7 @@ void recordCommandBuffers(const std::vector<VkCommandBuffer>& commandBuffers, co
 	}
 }
 
-void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface, const VkPipeline pipeline, VkSwapchainKHR& swapchain, std::vector<VkImageView>& swapchainImageViews, VkImageView& depthImageView, VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkRenderPass& renderPass, VkCommandPool& commandPool, std::vector<VkCommandBuffer>& commandBuffers, std::vector<VkFramebuffer>& framebuffers, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent, const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex) {
+void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface, const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, VkSwapchainKHR& swapchain, std::vector<VkImageView>& swapchainImageViews, VkImageView& depthImageView, VkImage& depthImage, VkDeviceMemory& depthImageMemory, const VkDescriptorSet descriptorSet, VkRenderPass& renderPass, VkCommandPool& commandPool, std::vector<VkCommandBuffer>& commandBuffers, std::vector<VkFramebuffer>& framebuffers, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent, const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex) {
 
 	int width = 0;
 	int height = 0;
@@ -616,7 +617,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 	renderPass = createRenderPass(device, surfaceFormat.format);
 	commandBuffers = allocateCommandBuffers(device, commandPool, swapchainImageCount);
 	framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
-	recordCommandBuffers(commandBuffers, renderPass, framebuffers, surfaceExtent, pipeline);
+	recordCommandBuffers(commandBuffers, renderPass, framebuffers, surfaceExtent, pipeline, pipelineLayout, descriptorSet);
 }
 
 #pragma warning(suppress : 4100) // Unreferenced formal parameter (argv & argc)
@@ -789,7 +790,7 @@ int main(int argc, char* argv[]) {
 
 	std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 
-	std::vector<float> cubeVertices = {
+	/*std::vector<float> cubeVertices = {
 		0.5, -0.5, -0.5,
 		0.5, -0.5, 0.5,
 		-0.5, -0.5, 0.5,
@@ -798,11 +799,17 @@ int main(int argc, char* argv[]) {
 		0.5, 0.5, 0.5,
 		-0.5, 0.5, 0.5,
 		-0.5, 0.5, -0.5
+	};*/
+
+	std::vector<float> cubeVertices = {
+		0.0, -0.5, 0.5,
+		0.5, 0.5, 0.5,
+		-0.5, 0.5, 0.5
 	};
 
 	uint32_t vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
 
-	VkBuffer vertexBuffer = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+	VkBuffer vertexBuffer = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	VkMemoryRequirements vertexBufferMemoryRequirements;
 	vkGetBufferMemoryRequirements(device, vertexBuffer, &vertexBufferMemoryRequirements);
 
@@ -814,18 +821,22 @@ int main(int argc, char* argv[]) {
 	memcpy(vertexBufferPointer, cubeVertices.data(), vertexBufferSize);
 	vkUnmapMemory(device, vertexBufferMemory);
 
-	std::vector<uint16_t> cubeIndices = {
+	/*std::vector<uint16_t> cubeIndices = {
 		0, 1, 3, 3, 1, 2,
 		1, 5, 2, 2, 5, 6,
 		5, 4, 6, 6, 4, 7,
 		4, 0, 7, 7, 0, 3,
 		3, 2, 7, 7, 2, 6,
 		4, 5, 0, 0, 5, 1
+	};*/
+
+	std::vector<uint16_t> cubeIndices = {
+		0, 1, 2
 	};
 
 	uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
 
-	VkBuffer indexBuffer = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	VkBuffer indexBuffer = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	VkMemoryRequirements indexBufferMemoryRequirements;
 	vkGetBufferMemoryRequirements(device, indexBuffer, &indexBufferMemoryRequirements);
 
@@ -837,15 +848,21 @@ int main(int argc, char* argv[]) {
 	memcpy(indexBufferPointer, cubeIndices.data(), indexBufferSize);
 	vkUnmapMemory(device, indexBufferMemory);
 
-	VkDescriptorSetLayoutBinding descriptorSetLayoutBinding;
-	descriptorSetLayoutBinding.binding = 0;
-	descriptorSetLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	descriptorSetLayoutBinding.descriptorCount = 2;
-	descriptorSetLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	std::array<VkDescriptorSetLayoutBinding, 2> descriptorSetLayoutBindings;
+
+	descriptorSetLayoutBindings[0].binding = 0;
+	descriptorSetLayoutBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	descriptorSetLayoutBindings[0].descriptorCount = 1;
+	descriptorSetLayoutBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	descriptorSetLayoutBindings[1].binding = 1;
+	descriptorSetLayoutBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	descriptorSetLayoutBindings[1].descriptorCount = 1;
+	descriptorSetLayoutBindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-	descriptorSetLayoutCreateInfo.bindingCount = 1;
-	descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
+	descriptorSetLayoutCreateInfo.bindingCount = 2;
+	descriptorSetLayoutCreateInfo.pBindings = descriptorSetLayoutBindings.data();
 
 	VkDescriptorSetLayout descriptorSetLayout;
 	VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout));
@@ -872,7 +889,7 @@ int main(int argc, char* argv[]) {
 	vkDestroyShaderModule(device, vertexShader, nullptr);
 
 	VkDescriptorPoolSize descriptorPoolSize;
-	descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	descriptorPoolSize.descriptorCount = 1;
 
 	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
@@ -880,8 +897,36 @@ int main(int argc, char* argv[]) {
 	descriptorPoolCreateInfo.pPoolSizes = &descriptorPoolSize;
 	descriptorPoolCreateInfo.maxSets = 1;
 	
-	VkDescriptorPool descriptorPool;
+	VkDescriptorPool descriptorPool = 0;
 	VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &descriptorPool));
+
+	VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+	descriptorSetAllocateInfo.descriptorPool = descriptorPool;
+	descriptorSetAllocateInfo.descriptorSetCount = 1;
+	descriptorSetAllocateInfo.pSetLayouts = &descriptorSetLayout;
+
+	VkDescriptorSet descriptorSet = 0;
+	vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
+
+	std::array<VkDescriptorBufferInfo, 2> descriptorBufferInfos;
+
+	descriptorBufferInfos[0].buffer = vertexBuffer;
+	descriptorBufferInfos[0].offset = 0;
+	descriptorBufferInfos[0].range = vertexBufferSize;
+
+	descriptorBufferInfos[1].buffer = indexBuffer;
+	descriptorBufferInfos[1].offset = 0;
+	descriptorBufferInfos[1].range = indexBufferSize;
+
+	VkWriteDescriptorSet writeDescriptorSet = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+	writeDescriptorSet.dstSet = descriptorSet;
+	writeDescriptorSet.dstBinding = 0;
+	writeDescriptorSet.dstArrayElement = 0;
+	writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	writeDescriptorSet.descriptorCount = 2;
+	writeDescriptorSet.pBufferInfo = descriptorBufferInfos.data();
+
+	vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 
 	VkQueue queue;
 	vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &queue);
@@ -895,7 +940,7 @@ int main(int argc, char* argv[]) {
 
 	std::vector<VkCommandBuffer> commandBuffers = allocateCommandBuffers(device, commandPool, swapchainImageCount);
 
-	recordCommandBuffers(commandBuffers, renderPass, framebuffers, surfaceExtent, pipeline);
+	recordCommandBuffers(commandBuffers, renderPass, framebuffers, surfaceExtent, pipeline, pipelineLayout, descriptorSet);
 
 	std::vector<VkSemaphore> imageAvailableSemaphores(MAX_FRAMES_IN_FLIGHT);
 	std::vector<VkSemaphore> renderFinishedSemaphores(MAX_FRAMES_IN_FLIGHT);
@@ -922,7 +967,7 @@ int main(int argc, char* argv[]) {
 		uint32_t imageIndex;
 		VkResult acquireResult = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 		if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
-			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, swapchain, swapchainImageViews, depthImageView, depthImage, depthImageMemory, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
+			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, pipelineLayout, swapchain, swapchainImageViews, depthImageView, depthImage, depthImageMemory, descriptorSet, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
 
 			continue;
 		}
@@ -959,7 +1004,7 @@ int main(int argc, char* argv[]) {
 
 		VkResult presentResult = vkQueuePresentKHR(queue, &presentInfo);
 		if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, swapchain, swapchainImageViews, depthImageView, depthImage, depthImageMemory, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
+			updateSurfaceDependantStructures(device, physicalDevice, window, surface, pipeline, pipelineLayout, swapchain, swapchainImageViews, depthImageView, depthImage, depthImageMemory, descriptorSet, renderPass, commandPool, commandBuffers, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
 
 			continue;
 		}
