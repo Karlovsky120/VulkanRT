@@ -17,7 +17,6 @@
 #include "glfw3.h"
 #include "glm/fwd.hpp"
 
-#include <array>
 #include <assert.h>
 #include <cstdio>
 #include <stdexcept>
@@ -95,14 +94,13 @@ VkInstance createInstance() {
 	createInfo.ppEnabledExtensionNames = extensions.data();
 
 	VkInstance instance = 0;
-
 	VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance));
 
 	return instance;
 }
 
 uint32_t getGraphicsQueueFamilyIndex(const VkPhysicalDevice physicalDevice) {
-	uint32_t queueFamilyCount = 0;
+	uint32_t queueFamilyCount;
 	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, 0);
 
 	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -120,7 +118,7 @@ uint32_t getGraphicsQueueFamilyIndex(const VkPhysicalDevice physicalDevice) {
 }
 
 VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKHR surface) {
-	uint32_t physicalDeviceCount = 0;
+	uint32_t physicalDeviceCount;
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, 0));
 
 	std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
@@ -130,7 +128,7 @@ VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKH
 	for (size_t i = 0; i < physicalDeviceCount; ++i) {
 		VkPhysicalDevice physicalDevice = physicalDevices[i];
 
-		VkPhysicalDeviceProperties physicalDeviceProperties;
+		VkPhysicalDeviceProperties physicalDeviceProperties = {};
 		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
 
 		printf("GPU%d: %s\n", static_cast<uint32_t>(i), physicalDeviceProperties.deviceName);
@@ -407,8 +405,8 @@ std::vector<VkFramebuffer> createFramebuffers(const VkDevice device, const VkRen
 
 	std::vector<VkFramebuffer> framebuffers(swapchainImageCount);
 	for (size_t i = 0; i < swapchainImageCount; ++i) {
-		std::array<VkImageView, 2> attachments = { swapchainImageViews[i], depthImageView };
-		framebufferCreateInfo.pAttachments = attachments.data();
+		VkImageView attachments[2] = { swapchainImageViews[i], depthImageView };
+		framebufferCreateInfo.pAttachments = attachments;
 		VK_CHECK(vkCreateFramebuffer(device, &framebufferCreateInfo, nullptr, &framebuffers[i]));
 	}
 
@@ -476,7 +474,7 @@ VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipeline
 	VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
 	rasterizationStateCreateInfo.lineWidth = 1.0f;
 	rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
-	rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_NONE; //VK_CULL_MODE_BACK_BIT;
+	rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
 	pipelineCreateInfo.pRasterizationState = &rasterizationStateCreateInfo;
 
 	VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
@@ -523,9 +521,9 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
 
 	VkClearValue colorImageClearColor = { 0.0f, 0.0f, 0.2f, 1.0f };
 	VkClearValue depthImageClearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
-	std::array<VkClearValue, 2> imageClearColors = { colorImageClearColor, depthImageClearColor };
-	renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(imageClearColors.size());
-	renderPassBeginInfo.pClearValues = imageClearColors.data();
+	VkClearValue imageClearColors[2] = { colorImageClearColor, depthImageClearColor };
+	renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(ARRAYSIZE(imageClearColors));
+	renderPassBeginInfo.pClearValues = imageClearColors;
 
 	VkViewport viewport = {};
 	viewport.width = static_cast<float>(renderArea.width);
@@ -656,7 +654,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	VkPhysicalDevice physicalDevice = 0;
-	VkPhysicalDeviceProperties physicalDeviceProperties;
+	VkPhysicalDeviceProperties physicalDeviceProperties = {};
 
 	try {
 		physicalDevice = pickPhysicalDevice(instance, surface);
@@ -703,7 +701,7 @@ int main(int argc, char* argv[]) {
 
 	volkLoadDevice(device);
 
-	VkSurfaceFormatKHR surfaceFormat;
+	VkSurfaceFormatKHR surfaceFormat = {};
 	surfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
 	surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 
@@ -717,7 +715,7 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	VkSurfaceCapabilitiesKHR surfaceCapabilities;
+	VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
 	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
 
 	uint32_t requestedSwapchainImageCount;
@@ -747,7 +745,7 @@ int main(int argc, char* argv[]) {
 	VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
 	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalDeviceMemoryProperties);
 
-	VkDeviceMemory depthImageMemory;
+	VkDeviceMemory depthImageMemory = 0;
 	try {
 		VkMemoryRequirements depthImageMemoryRequirements;
 		vkGetImageMemoryRequirements(device, depthImage, &depthImageMemoryRequirements);
@@ -773,7 +771,7 @@ int main(int argc, char* argv[]) {
 
 	vkBindImageMemory(device, depthImage, depthImageMemory, 0);
 
-	VkImageView depthImageView;
+	VkImageView depthImageView = 0;
 	depthImageView = createImageView(device, depthImage, VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
 	VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
@@ -838,7 +836,7 @@ int main(int argc, char* argv[]) {
 	memcpy(indexBufferPointer, cubeIndices.data(), indexBufferSize);
 	vkUnmapMemory(device, indexBufferMemory);
 
-	std::array<VkDescriptorSetLayoutBinding, 2> descriptorSetLayoutBindings;
+	VkDescriptorSetLayoutBinding descriptorSetLayoutBindings[2] = {};
 
 	descriptorSetLayoutBindings[0].binding = 0;
 	descriptorSetLayoutBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -852,9 +850,9 @@ int main(int argc, char* argv[]) {
 
 	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
 	descriptorSetLayoutCreateInfo.bindingCount = 2;
-	descriptorSetLayoutCreateInfo.pBindings = descriptorSetLayoutBindings.data();
+	descriptorSetLayoutCreateInfo.pBindings = descriptorSetLayoutBindings;
 
-	VkDescriptorSetLayout descriptorSetLayout;
+	VkDescriptorSetLayout descriptorSetLayout = 0;
 	VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout));
 
 	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
@@ -878,7 +876,7 @@ int main(int argc, char* argv[]) {
 	vkDestroyShaderModule(device, fragmentShader, nullptr);
 	vkDestroyShaderModule(device, vertexShader, nullptr);
 
-	VkDescriptorPoolSize descriptorPoolSize;
+	VkDescriptorPoolSize descriptorPoolSize = {};
 	descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	descriptorPoolSize.descriptorCount = 1;
 
@@ -898,8 +896,7 @@ int main(int argc, char* argv[]) {
 	VkDescriptorSet descriptorSet = 0;
 	vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
 
-	std::array<VkDescriptorBufferInfo, 2> descriptorBufferInfos;
-
+	VkDescriptorBufferInfo descriptorBufferInfos[2] = {};
 	descriptorBufferInfos[0].buffer = vertexBuffer;
 	descriptorBufferInfos[0].offset = 0;
 	descriptorBufferInfos[0].range = vertexBufferSize;
@@ -914,16 +911,14 @@ int main(int argc, char* argv[]) {
 	writeDescriptorSet.dstArrayElement = 0;
 	writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	writeDescriptorSet.descriptorCount = 2;
-	writeDescriptorSet.pBufferInfo = descriptorBufferInfos.data();
+	writeDescriptorSet.pBufferInfo = descriptorBufferInfos;
 
 	vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 
-	VkQueue queue;
+	VkQueue queue = 0;
 	vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &queue);
 
 	std::vector<VkCommandPool> commandPools(swapchainImageCount);
-
-
 
 	VkCommandPoolCreateInfo commandPoolCreateInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 	commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
