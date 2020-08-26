@@ -690,6 +690,14 @@ int main(int argc, char* argv[]) {
 	deviceCreateInfo.enabledExtensionCount = 1;
 	deviceCreateInfo.ppEnabledExtensionNames = &deviceExtensions;
 
+	VkPhysicalDeviceVulkan12Features physicalDeviceVulkan12Features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+	physicalDeviceVulkan12Features.scalarBlockLayout = VK_TRUE;
+
+	VkPhysicalDeviceFeatures2 physicalDeviceFeatures2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+	physicalDeviceFeatures2.pNext = &physicalDeviceVulkan12Features;
+
+	deviceCreateInfo.pNext = &physicalDeviceFeatures2;
+
 	VkDevice device = 0;
 	VK_CHECK(vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device));
 
