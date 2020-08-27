@@ -633,12 +633,14 @@ int main(int argc, char* argv[]) {
     window = glfwCreateWindow(WIDTH, HEIGHT, "VulkanRT", NULL, NULL);
     if (!window) {
         printf("Failed to create GLFW window!");
+
         glfwTerminate();
         return -1;
     }
 
     if (volkInitialize() != VK_SUCCESS) {
         printf("Failed to initialize Volk!");
+        glfwTerminate();
         return -1;
     }
 
@@ -670,6 +672,8 @@ int main(int argc, char* argv[]) {
         printf("Failed to create window surface!");
 
         vkDestroyInstance(instance, nullptr);
+
+        glfwTerminate();
         return -1;
     }
 
@@ -683,6 +687,8 @@ int main(int argc, char* argv[]) {
 
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
+
+        glfwTerminate();
         return -1;
     }
 
@@ -729,6 +735,7 @@ int main(int argc, char* argv[]) {
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
 
+        glfwTerminate();
         return -1;
     }
 
@@ -745,6 +752,7 @@ int main(int argc, char* argv[]) {
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
 
+        glfwTerminate();
         return -1;
     }
 
@@ -783,6 +791,7 @@ int main(int argc, char* argv[]) {
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
 
+        glfwTerminate();
         return -1;
     }
 
@@ -1085,6 +1094,5 @@ int main(int argc, char* argv[]) {
     vkDestroyInstance(instance, nullptr);
 
     glfwTerminate();
-
     return 0;
 }
