@@ -943,12 +943,14 @@ int main(int argc, char* argv[]) {
     std::vector<VkCommandPool> commandPools(swapchainImageCount);
 
     VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
     commandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
 
     for (size_t i = 0; i < swapchainImageCount; ++i) {
         VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPools[i]));
     }
+
+    std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
 
     std::vector<VkSemaphore> imageAvailableSemaphores(MAX_FRAMES_IN_FLIGHT);
     std::vector<VkSemaphore> renderFinishedSemaphores(MAX_FRAMES_IN_FLIGHT);
@@ -993,13 +995,14 @@ int main(int argc, char* argv[]) {
         }
         imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
+        vkFreeCommandBuffers(device, commandPools[imageIndex], 1, &commandBuffers[imageIndex]);
+
         vkResetCommandPool(device, commandPools[imageIndex], VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
         commandBufferAllocateInfo.commandPool = commandPools[imageIndex];
 
-        VkCommandBuffer commandBuffer = 0;
-        VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffer));
+        VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffers[imageIndex]));
 
-        recordCommandBuffer(commandBuffer, renderPass, framebuffers[imageIndex], surfaceExtent, pipeline, pipelineLayout, descriptorSet);
+        recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, pipeline, pipelineLayout, descriptorSet);
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -1008,7 +1011,7 @@ int main(int argc, char* argv[]) {
         submitInfo.pWaitSemaphores      = &imageAvailableSemaphores[currentFrame];
         submitInfo.pWaitDstStageMask    = &waitStage;
         submitInfo.commandBufferCount   = 1;
-        submitInfo.pCommandBuffers      = &commandBuffer;
+        submitInfo.pCommandBuffers      = &commandBuffers[imageIndex];
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores    = &renderFinishedSemaphores[currentFrame];
 
@@ -1051,8 +1054,9 @@ int main(int argc, char* argv[]) {
         vkDestroyFence(device, fence, nullptr);
     }
 
-    for (VkCommandPool& commandPool : commandPools) {
-        vkDestroyCommandPool(device, commandPool, nullptr);
+    for (size_t i = 0; i < swapchainImageCount; ++i) {
+        vkFreeCommandBuffers(device, commandPools[i], 1, &commandBuffers[i]);
+        vkDestroyCommandPool(device, commandPools[i], nullptr);
     }
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
