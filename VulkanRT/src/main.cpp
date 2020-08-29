@@ -17,7 +17,12 @@
 #include "volk.h"
 
 #include "glfw3.h"
+
 #include "glm/fwd.hpp"
+#include "glm/gtx/rotate_vector.hpp"
+#include "glm/mat4x4.hpp"
+#include "glm/vec2.hpp"
+#include "glm/vec3.hpp"
 
 #include <assert.h>
 #include <cstdio>
@@ -37,10 +42,30 @@
 #define VERBOSE  0
 #define INFO     0
 
+#define PI 3.1415926535897932384f
+
 #define WIDTH  1280
 #define HEIGHT 720
+#define FOV    glm::radians(100.0f)
+#define NEAR   0.001f
 
 #define MAX_FRAMES_IN_FLIGHT 2
+
+struct Camera {
+    glm::vec2 rotation = glm::vec2();
+    glm::vec3 position = glm::vec3();
+};
+
+struct PushConstants {
+    // Camera rotation and position
+    glm::mat4 rotation;
+    glm::vec3 position;
+
+    // Perspective parameters for reverse z
+    float oneOverTanOfHalfFov;
+    float oneOverAspectRatio;
+    float near;
+};
 
 #ifdef _DEBUG
 static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
@@ -364,7 +389,7 @@ VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceForma
     attachments[0].initialLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
     attachments[0].finalLayout             = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    attachments[1].format         = VK_FORMAT_D24_UNORM_S8_UINT;
+    attachments[1].format         = VK_FORMAT_D32_SFLOAT_S8_UINT;
     attachments[1].samples        = VK_SAMPLE_COUNT_1_BIT;
     attachments[1].loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachments[1].storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -524,19 +549,9 @@ VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipeline
 }
 
 void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass renderPass, const VkFramebuffer& framebuffer, const VkExtent2D renderArea,
-                         const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet) {
+                         const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet,
+                         const PushConstants& pushConstants, uint32_t indexCount) {
     VkCommandBufferBeginInfo commandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-
-    VkRenderPassBeginInfo renderPassBeginInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    renderPassBeginInfo.renderPass            = renderPass;
-    renderPassBeginInfo.renderArea.offset     = {0, 0};
-    renderPassBeginInfo.renderArea.extent     = renderArea;
-
-    VkClearValue colorImageClearColor   = {0.0f, 0.0f, 0.2f, 1.0f};
-    VkClearValue depthImageClearColor   = {0.0f, 0.0f, 0.0f, 0.0f};
-    VkClearValue imageClearColors[2]    = {colorImageClearColor, depthImageClearColor};
-    renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(ARRAYSIZE(imageClearColors));
-    renderPassBeginInfo.pClearValues    = imageClearColors;
 
     VkViewport viewport = {};
     viewport.width      = static_cast<float>(renderArea.width);
@@ -555,17 +570,103 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    renderPassBeginInfo.framebuffer = framebuffer;
+    VkRenderPassBeginInfo renderPassBeginInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    renderPassBeginInfo.renderPass            = renderPass;
+    renderPassBeginInfo.renderArea.offset     = {0, 0};
+    renderPassBeginInfo.renderArea.extent     = renderArea;
+
+    VkClearValue colorImageClearColor   = {0.0f, 0.0f, 0.2f, 1.0f};
+    VkClearValue depthImageClearColor   = {0.0f, 0.0f, 0.0f, 0.0f};
+    VkClearValue imageClearColors[2]    = {colorImageClearColor, depthImageClearColor};
+    renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(ARRAYSIZE(imageClearColors));
+    renderPassBeginInfo.pClearValues    = imageClearColors;
+    renderPassBeginInfo.framebuffer     = framebuffer;
     vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    vkCmdDraw(commandBuffer, indexCount, 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
+}
+
+void updateCameraAndPushConstants(GLFWwindow* window, Camera& camera, PushConstants& pushConstants) {
+    double mouseXInput;
+    double mouseYInput;
+
+    glfwGetCursorPos(window, &mouseXInput, &mouseYInput);
+    glfwSetCursorPos(window, 0, 0);
+
+    float mouseX = static_cast<float>(mouseXInput);
+    float mouseY = static_cast<float>(mouseYInput);
+
+    float rotateSpeedModifier = 0.001f;
+
+    camera.rotation.x += mouseX * rotateSpeedModifier;
+    if (camera.rotation.x > 2.0f * PI) {
+        camera.rotation.x -= 2.0f * PI;
+    } else if (camera.rotation.x < 0.0f) {
+        camera.rotation.x += 2.0f * PI;
+    }
+
+    float epsilon = 0.0001f;
+
+    camera.rotation.y += mouseY * rotateSpeedModifier;
+    if (camera.rotation.y > PI * 0.5f) {
+        camera.rotation.y = PI * 0.5f - epsilon;
+    } else if (camera.rotation.y < -PI * 0.5f) {
+        camera.rotation.y = -PI * 0.5f + epsilon;
+    }
+
+    glm::vec3 globalUp      = glm::vec3(0.0f, -1.0f, 0.0f);
+    glm::vec3 globalRight   = glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 globalForward = glm::vec3(0.0f, 0.0f, -1.0f);
+
+    glm::vec3 forward = glm::rotate(globalForward, camera.rotation.x, globalUp);
+    glm::vec3 right   = glm::rotate(globalRight, camera.rotation.x, globalUp);
+
+    pushConstants.rotation = glm::identity<glm::mat4>();
+    pushConstants.rotation = glm::rotate(pushConstants.rotation, static_cast<float>(camera.rotation.x), globalUp);
+    pushConstants.rotation = glm::rotate(pushConstants.rotation, static_cast<float>(camera.rotation.y), globalRight);
+
+    float moveSpeedModifier = 0.005f;
+
+    glm::vec3 deltaPosition = glm::vec3();
+
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+        deltaPosition += forward;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+        deltaPosition -= forward;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+        deltaPosition -= right;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+        deltaPosition += right;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        deltaPosition += globalUp;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
+        deltaPosition -= globalUp;
+    }
+
+    if (deltaPosition != glm::vec3()) {
+        camera.position += glm::normalize(deltaPosition) * moveSpeedModifier;
+    }
+
+    pushConstants.position = camera.position;
 }
 
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,
@@ -573,7 +674,8 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
                                       VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkRenderPass& renderPass, std::vector<VkFramebuffer>& framebuffers,
                                       VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
                                       const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat,
-                                      const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex) {
+                                      const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex,
+                                      float& oneOverAspectRatio) {
 
     int width  = 0;
     int height = 0;
@@ -601,6 +703,8 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
     surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
 
+    oneOverAspectRatio = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
+
     VkSwapchainKHR newSwapchain =
         createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent, swapchain);
     vkDestroySwapchainKHR(device, swapchain, nullptr);
@@ -608,12 +712,12 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 
     swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
 
-    depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D24_UNORM_S8_UINT);
+    depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D32_SFLOAT_S8_UINT);
     VkMemoryRequirements depthImageMemoryRequirements;
     vkGetImageMemoryRequirements(device, depthImage, &depthImageMemoryRequirements);
     depthImageMemory = allocateVulkanObjectMemory(device, depthImageMemoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physicalDeviceMemoryProperties);
     vkBindImageMemory(device, depthImage, depthImageMemory, 0);
-    depthImageView = createImageView(device, depthImage, VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    depthImageView = createImageView(device, depthImage, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
     renderPass   = createRenderPass(device, surfaceFormat.format);
     framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
@@ -637,6 +741,18 @@ int main(int argc, char* argv[]) {
         glfwTerminate();
         return -1;
     }
+
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    if (!glfwRawMouseMotionSupported()) {
+        printf("Raw mouse motion not supported!");
+
+        glfwTerminate();
+        return -1;
+    }
+
+    glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+    glfwSetCursorPos(window, 0, 0);
 
     if (volkInitialize() != VK_SUCCESS) {
         printf("Failed to initialize Volk!");
@@ -677,8 +793,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    VkPhysicalDevice           physicalDevice           = 0;
-    VkPhysicalDeviceProperties physicalDeviceProperties = {};
+    VkPhysicalDevice physicalDevice = 0;
 
     try {
         physicalDevice = pickPhysicalDevice(instance, surface);
@@ -692,6 +807,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
+    VkPhysicalDeviceProperties physicalDeviceProperties = {};
     vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
     printf("Selected GPU: %s\n", physicalDeviceProperties.deviceName);
 
@@ -765,7 +881,7 @@ int main(int argc, char* argv[]) {
     std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
     uint32_t                 swapchainImageCount = static_cast<uint32_t>(swapchainImageViews.size());
 
-    VkImage depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D24_UNORM_S8_UINT);
+    VkImage depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D32_SFLOAT_S8_UINT);
 
     VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalDeviceMemoryProperties);
@@ -798,13 +914,14 @@ int main(int argc, char* argv[]) {
     vkBindImageMemory(device, depthImage, depthImageMemory, 0);
 
     VkImageView depthImageView = 0;
-    depthImageView             = createImageView(device, depthImage, VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    depthImageView             = createImageView(device, depthImage, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
     VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
 
     std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 
-    /*std::vector<float> cubeVertices = {
+    // clang-format off
+    std::vector<float> cubeVertices = {
             0.5, -0.5, -0.5,
             0.5, -0.5, 0.5,
             -0.5, -0.5, 0.5,
@@ -813,13 +930,17 @@ int main(int argc, char* argv[]) {
             0.5, 0.5, 0.5,
             -0.5, 0.5, 0.5,
             -0.5, 0.5, -0.5
-    };*/
+    };
+    // clang-format on
 
-    std::vector<float> cubeVertices = {0.0, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5};
+    for (float& vertex : cubeVertices) {
+        vertex *= 2.0f;
+    }
 
     uint32_t vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
 
-    VkBuffer             vertexBuffer = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    VkBuffer vertexBuffer = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
     VkMemoryRequirements vertexBufferMemoryRequirements;
     vkGetBufferMemoryRequirements(device, vertexBuffer, &vertexBufferMemoryRequirements);
 
@@ -832,16 +953,16 @@ int main(int argc, char* argv[]) {
     memcpy(vertexBufferPointer, cubeVertices.data(), vertexBufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
 
-    /*std::vector<uint16_t> cubeIndices = {
+    // clang-format off
+    std::vector<uint16_t> cubeIndices = {
             0, 1, 3, 3, 1, 2,
             1, 5, 2, 2, 5, 6,
             5, 4, 6, 6, 4, 7,
             4, 0, 7, 7, 0, 3,
             3, 2, 7, 7, 2, 6,
             4, 5, 0, 0, 5, 1
-    };*/
-
-    std::vector<uint16_t> cubeIndices = {0, 1, 2};
+    };
+    // clang-format on
 
     uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
 
@@ -883,7 +1004,14 @@ int main(int argc, char* argv[]) {
     VkPipelineCache pipelineCache = 0;
     VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
 
+    VkPushConstantRange pushConstantRange;
+    pushConstantRange.offset     = 0;
+    pushConstantRange.size       = sizeof(PushConstants);
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pipelineLayoutCreateInfo.pushConstantRangeCount     = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges        = &pushConstantRange;
     pipelineLayoutCreateInfo.setLayoutCount             = 1;
     pipelineLayoutCreateInfo.pSetLayouts                = &descriptorSetLayout;
 
@@ -971,6 +1099,15 @@ int main(int argc, char* argv[]) {
     commandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     commandBufferAllocateInfo.commandBufferCount          = 1;
 
+    Camera camera   = {};
+    camera.rotation = glm::vec2(0.0f, 0.0f);
+    camera.position = glm::vec3(0.0f, 0.0f, 2.5f);
+
+    PushConstants pushConstants       = {};
+    pushConstants.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
+    pushConstants.oneOverAspectRatio  = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
+    pushConstants.near                = NEAR;
+
     uint32_t currentFrame = 0;
 
     while (!glfwWindowShouldClose(window)) {
@@ -983,7 +1120,7 @@ int main(int argc, char* argv[]) {
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
                                              depthImageMemory, renderPass, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties,
-                                             surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
+                                             surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, pushConstants.oneOverAspectRatio);
 
             continue;
         } else if (acquireResult != VK_SUBOPTIMAL_KHR) {
@@ -1002,7 +1139,10 @@ int main(int argc, char* argv[]) {
 
         VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffers[imageIndex]));
 
-        recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, pipeline, pipelineLayout, descriptorSet);
+        updateCameraAndPushConstants(window, camera, pushConstants);
+
+        recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, pipeline, pipelineLayout, descriptorSet,
+                            pushConstants, static_cast<uint32_t>(cubeIndices.size()));
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -1030,7 +1170,7 @@ int main(int argc, char* argv[]) {
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
                                              depthImageMemory, renderPass, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties,
-                                             surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex);
+                                             surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, pushConstants.oneOverAspectRatio);
 
             continue;
         } else {
