@@ -26,7 +26,7 @@
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 
-#include <assert.h>
+#include <cassert>
 #include <cstdio>
 #include <stdexcept>
 #include <vector>
