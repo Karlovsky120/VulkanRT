@@ -3,8 +3,8 @@
 #ifndef _DEBUG
 #pragma warning(disable : 4189) // Local variable is initialized but not references (caused
                                 // by asserts being removed from VK_CHECK)
-#pragma warning(disable : 4710)
-#pragma warning(disable : 4711)
+#pragma warning(disable : 4710) // * function not inlined
+#pragma warning(disable : 4711) // Function * selected for automatic line expansion
 #endif
 
 #define VK_ENABLE_BETA_EXTENSIONS

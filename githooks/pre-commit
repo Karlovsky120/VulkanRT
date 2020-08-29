@@ -6,7 +6,7 @@ if ! exec "$MSBuild" VulkanRT.sln -t:build -p:Configuration=Debug -p:Platform=x6
 then
 	echo "Debug build failed!"
 	exit 1
-elif ! exec "$MSBuild" VulkanRT.sln -t:build -p:Configuration=Debug -p:Platform=x64 | grep -q "Build succeeded."
+elif ! exec "$MSBuild" VulkanRT.sln -t:build -p:Configuration=Release -p:Platform=x64 | grep -q "Build succeeded."
 then
 	echo "Release build failed!"
 	exit 1
