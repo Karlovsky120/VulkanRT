@@ -1,6 +1,10 @@
 #version 450
-#extension GL_EXT_shader_16bit_storage : require
+
+#extension GL_GOOGLE_include_directive: require
 #extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_16bit_storage : require
+
+#include "sharedStructures.h"
 
 layout(scalar, set = 0, binding = 0) readonly buffer Vertices {
     float vertices[];
@@ -13,12 +17,8 @@ layout(set = 0, binding = 1) readonly buffer Indices {
 layout(location = 0) out vec3 fragColor;
 
 layout(push_constant) uniform PushConstants {
-	mat4 rotation;
-	vec3 position;
-    float oneOverTanOfHalfFov;
-    float oneOverAspectRatio;
-    float near;
-} pushConstants;
+	PushData pd;
+} pc;
 
 vec3 colors[3] = vec3[](
     vec3(1.0, 0.0, 0.0),
@@ -35,12 +35,12 @@ void main() {
                        vertices[indices.y],
                        vertices[indices.z]);
 
-    gl_Position = vec4(vertex - pushConstants.position, 1.0) * pushConstants.rotation;
+    gl_Position = vec4(vertex - pc.pd.position, 1.0) * pc.pd.rotation;
 
-    gl_Position.x *= pushConstants.oneOverTanOfHalfFov * pushConstants.oneOverAspectRatio;
-    gl_Position.y *= pushConstants.oneOverTanOfHalfFov;
+    gl_Position.x *= pc.pd.oneOverTanOfHalfFov * pc.pd.oneOverAspectRatio;
+    gl_Position.y *= pc.pd.oneOverTanOfHalfFov;
     gl_Position.w = -gl_Position.z; 
-    gl_Position.z = pushConstants.near;
+    gl_Position.z = pc.pd.near;
 
     fragColor = colors[gl_VertexIndex % 3];
 }

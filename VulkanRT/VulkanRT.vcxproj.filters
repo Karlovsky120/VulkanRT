@@ -30,4 +30,9 @@
       <Filter>Shaders</Filter>
     </CustomBuild>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="sharedStructures.h">
+      <Filter>Shaders</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>

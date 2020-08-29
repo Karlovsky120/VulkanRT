@@ -11,7 +11,9 @@
 #define VOLK_IMPLEMENTATION
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
-#define GLM_CONFIG_XYZW_ONLY
+#define GLM_FORCE_XYZW_ONLY
+
+#include "sharedStructures.h"
 
 #pragma warning(push, 0)
 #include "volk.h"
@@ -54,17 +56,6 @@
 struct Camera {
     glm::vec2 rotation = glm::vec2();
     glm::vec3 position = glm::vec3();
-};
-
-struct PushConstants {
-    // Camera rotation and position
-    glm::mat4 rotation;
-    glm::vec3 position;
-
-    // Perspective parameters for reverse z
-    float oneOverTanOfHalfFov;
-    float oneOverAspectRatio;
-    float near;
 };
 
 #ifdef _DEBUG
@@ -550,7 +541,7 @@ VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipeline
 
 void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass renderPass, const VkFramebuffer& framebuffer, const VkExtent2D renderArea,
                          const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet,
-                         const PushConstants& pushConstants, uint32_t indexCount) {
+                         const PushData& pushData, uint32_t indexCount) {
     VkCommandBufferBeginInfo commandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
     VkViewport viewport = {};
@@ -583,7 +574,7 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     renderPassBeginInfo.framebuffer     = framebuffer;
     vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushData), &pushData);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
@@ -595,7 +586,7 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
 
-void updateCameraAndPushConstants(GLFWwindow* window, Camera& camera, PushConstants& pushConstants) {
+void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushData) {
     double mouseXInput;
     double mouseYInput;
 
@@ -630,9 +621,9 @@ void updateCameraAndPushConstants(GLFWwindow* window, Camera& camera, PushConsta
     glm::vec3 forward = glm::rotate(globalForward, camera.rotation.x, globalUp);
     glm::vec3 right   = glm::rotate(globalRight, camera.rotation.x, globalUp);
 
-    pushConstants.rotation = glm::identity<glm::mat4>();
-    pushConstants.rotation = glm::rotate(pushConstants.rotation, static_cast<float>(camera.rotation.x), globalUp);
-    pushConstants.rotation = glm::rotate(pushConstants.rotation, static_cast<float>(camera.rotation.y), globalRight);
+    pushData.rotation = glm::identity<glm::mat4>();
+    pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.rotation.x), globalUp);
+    pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.rotation.y), globalRight);
 
     float moveSpeedModifier = 0.005f;
 
@@ -666,7 +657,7 @@ void updateCameraAndPushConstants(GLFWwindow* window, Camera& camera, PushConsta
         camera.position += glm::normalize(deltaPosition) * moveSpeedModifier;
     }
 
-    pushConstants.position = camera.position;
+    pushData.position = camera.position;
 }
 
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,
@@ -1006,7 +997,7 @@ int main(int argc, char* argv[]) {
 
     VkPushConstantRange pushConstantRange;
     pushConstantRange.offset     = 0;
-    pushConstantRange.size       = sizeof(PushConstants);
+    pushConstantRange.size       = sizeof(PushData);
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
@@ -1103,10 +1094,10 @@ int main(int argc, char* argv[]) {
     camera.rotation = glm::vec2(0.0f, 0.0f);
     camera.position = glm::vec3(0.0f, 0.0f, 2.5f);
 
-    PushConstants pushConstants       = {};
-    pushConstants.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
-    pushConstants.oneOverAspectRatio  = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
-    pushConstants.near                = NEAR;
+    PushData pushData       = {};
+    pushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
+    pushData.oneOverAspectRatio  = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
+    pushData.near                = NEAR;
 
     uint32_t currentFrame = 0;
 
@@ -1120,7 +1111,7 @@ int main(int argc, char* argv[]) {
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
                                              depthImageMemory, renderPass, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties,
-                                             surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, pushConstants.oneOverAspectRatio);
+                                             surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, pushData.oneOverAspectRatio);
 
             continue;
         } else if (acquireResult != VK_SUBOPTIMAL_KHR) {
@@ -1139,10 +1130,10 @@ int main(int argc, char* argv[]) {
 
         VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffers[imageIndex]));
 
-        updateCameraAndPushConstants(window, camera, pushConstants);
+        updateCameraAndPushData(window, camera, pushData);
 
         recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, pipeline, pipelineLayout, descriptorSet,
-                            pushConstants, static_cast<uint32_t>(cubeIndices.size()));
+                            pushData, static_cast<uint32_t>(cubeIndices.size()));
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -1170,7 +1161,7 @@ int main(int argc, char* argv[]) {
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
                                              depthImageMemory, renderPass, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties,
-                                             surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, pushConstants.oneOverAspectRatio);
+                                             surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, pushData.oneOverAspectRatio);
 
             continue;
         } else {
