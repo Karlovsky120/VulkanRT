@@ -169,6 +169,23 @@ VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKH
             continue;
         }
 
+        uint32_t extensionPropertyCount = 0;
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionPropertyCount, nullptr);
+
+        std::vector<VkExtensionProperties> extensionPropertiess(extensionPropertyCount);
+
+        bool rayTracingSupported = false;
+        for (VkExtensionProperties extensionProperties : extensionPropertiess) {
+            if (strcmp(extensionProperties.extensionName, VK_KHR_RAY_TRACING_EXTENSION_NAME)) {
+                rayTracingSupported = true;
+                break;
+            }
+        }
+
+        if (!rayTracingSupported) {
+            continue;
+        }
+
         return physicalDevice;
     }
 
@@ -631,6 +648,7 @@ int main(int argc, char* argv[]) {
 
     VkPhysicalDeviceVulkan12Features physicalDeviceVulkan12Features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     physicalDeviceVulkan12Features.scalarBlockLayout                = VK_TRUE;
+    physicalDeviceVulkan12Features.bufferDeviceAddress              = VK_TRUE;
 
     VkPhysicalDeviceFeatures2 physicalDeviceFeatures2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     physicalDeviceFeatures2.pNext                     = &physicalDeviceVulkan12Features;
