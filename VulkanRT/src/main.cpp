@@ -55,6 +55,8 @@
 
 #define ACCELERATION_FACTOR 300.0f
 
+#define STAGING_BUFFER_SIZE 67'108'864 /// 64MB
+
 #define MAX_FRAMES_IN_FLIGHT 2
 #define UI_UPDATE_PERIOD     500'000
 
@@ -592,6 +594,44 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
 
+template <typename T>
+void uploadToDeviceLocalBuffer(const VkDevice device, const std::vector<T>& data, const VkBuffer stagingBuffer, const VkDeviceMemory stagingBufferMemory,
+                         const VkBuffer deviceBuffer, const VkCommandPool transferCommandPool, const VkQueue queue) {
+    uint32_t bufferSize = sizeof(T) * static_cast<uint32_t>(data.size());
+
+    void* stagingBufferPointer;
+    VK_CHECK(vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &stagingBufferPointer));
+    memcpy(stagingBufferPointer, data.data(), bufferSize);
+    vkUnmapMemory(device, stagingBufferMemory);
+
+    VkCommandBufferAllocateInfo transferCommandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    transferCommandBufferAllocateInfo.commandPool                 = transferCommandPool;
+    transferCommandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    transferCommandBufferAllocateInfo.commandBufferCount          = 1;
+
+    VkCommandBuffer transferCommandBuffer = 0;
+    VK_CHECK(vkAllocateCommandBuffers(device, &transferCommandBufferAllocateInfo, &transferCommandBuffer));
+
+    VkCommandBufferBeginInfo transferCommandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    VK_CHECK(vkBeginCommandBuffer(transferCommandBuffer, &transferCommandBufferBeginInfo));
+
+    VkBufferCopy bufferCopy = {};
+    bufferCopy.srcOffset    = 0;
+    bufferCopy.dstOffset    = 0;
+    bufferCopy.size         = bufferSize;
+    vkCmdCopyBuffer(transferCommandBuffer, stagingBuffer, deviceBuffer, 1, &bufferCopy);
+    VK_CHECK(vkEndCommandBuffer(transferCommandBuffer));
+
+    VkSubmitInfo transferSubmitInfo       = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    transferSubmitInfo.commandBufferCount = 1;
+    transferSubmitInfo.pCommandBuffers    = &transferCommandBuffer;
+
+    VK_CHECK(vkQueueSubmit(queue, 1, &transferSubmitInfo, VK_NULL_HANDLE));
+    vkDeviceWaitIdle(device);
+
+    vkFreeCommandBuffers(device, transferCommandPool, 1, &transferCommandBuffer);
+}
+
 void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushData, const uint32_t frameTime) {
     double mouseXInput;
     double mouseYInput;
@@ -924,6 +964,25 @@ int main(int argc, char* argv[]) {
 
     std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 
+    VkBuffer stagingBuffer = createBuffer(device, STAGING_BUFFER_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+
+    VkMemoryRequirements stagingBufferMemoryRequirements;
+    vkGetBufferMemoryRequirements(device, stagingBuffer, &stagingBufferMemoryRequirements);
+
+    VkDeviceMemory stagingBufferMemory =
+        allocateVulkanObjectMemory(device, stagingBufferMemoryRequirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, physicalDeviceMemoryProperties);
+    vkBindBufferMemory(device, stagingBuffer, stagingBufferMemory, 0);
+
+    VkCommandPoolCreateInfo transferCommandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    transferCommandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    transferCommandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
+
+    VkCommandPool transferCommandPool = 0;
+    VK_CHECK(vkCreateCommandPool(device, &transferCommandPoolCreateInfo, nullptr, &transferCommandPool));
+
+    VkQueue queue = 0;
+    vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &queue);
+
     // clang-format off
     std::vector<float> cubeVertices = {
             0.5, -0.5, -0.5,
@@ -941,21 +1000,16 @@ int main(int argc, char* argv[]) {
         vertex *= 2.0f;
     }
 
-    uint32_t vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
-
-    VkBuffer vertexBuffer = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-    VkMemoryRequirements vertexBufferMemoryRequirements;
+    uint32_t             vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
+    VkBuffer             vertexBuffer     = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    VkMemoryRequirements vertexBufferMemoryRequirements = {};
     vkGetBufferMemoryRequirements(device, vertexBuffer, &vertexBufferMemoryRequirements);
 
     VkDeviceMemory vertexBufferMemory =
-        allocateVulkanObjectMemory(device, vertexBufferMemoryRequirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, physicalDeviceMemoryProperties);
+        allocateVulkanObjectMemory(device, vertexBufferMemoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physicalDeviceMemoryProperties);
     vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
 
-    void* vertexBufferPointer;
-    vkMapMemory(device, vertexBufferMemory, 0, vertexBufferSize, 0, &vertexBufferPointer);
-    memcpy(vertexBufferPointer, cubeVertices.data(), vertexBufferSize);
-    vkUnmapMemory(device, vertexBufferMemory);
+    uploadToDeviceLocalBuffer(device, cubeVertices, stagingBuffer, stagingBufferMemory, vertexBuffer, transferCommandPool, queue);
 
     // clang-format off
     std::vector<uint16_t> cubeIndices = {
@@ -968,20 +1022,21 @@ int main(int argc, char* argv[]) {
     };
     // clang-format on
 
-    uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
-
-    VkBuffer             indexBuffer = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    VkMemoryRequirements indexBufferMemoryRequirements;
+    uint32_t             indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
+    VkBuffer             indexBuffer     = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    VkMemoryRequirements indexBufferMemoryRequirements = {};
     vkGetBufferMemoryRequirements(device, indexBuffer, &indexBufferMemoryRequirements);
 
     VkDeviceMemory indexBufferMemory =
         allocateVulkanObjectMemory(device, indexBufferMemoryRequirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, physicalDeviceMemoryProperties);
     vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0);
 
-    void* indexBufferPointer;
-    vkMapMemory(device, indexBufferMemory, 0, indexBufferSize, 0, &indexBufferPointer);
-    memcpy(indexBufferPointer, cubeIndices.data(), indexBufferSize);
-    vkUnmapMemory(device, indexBufferMemory);
+    uploadToDeviceLocalBuffer(device, cubeIndices, stagingBuffer, stagingBufferMemory, indexBuffer, transferCommandPool, queue);
+
+    vkDestroyCommandPool(device, transferCommandPool, nullptr);
+
+    vkFreeMemory(device, stagingBufferMemory, nullptr);
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
 
     VkDescriptorSetLayoutBinding descriptorSetLayoutBindings[2] = {};
 
@@ -1069,17 +1124,14 @@ int main(int argc, char* argv[]) {
 
     vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 
-    VkQueue queue = 0;
-    vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &queue);
-
     std::vector<VkCommandPool> commandPools(swapchainImageCount);
 
-    VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    commandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
+    VkCommandPoolCreateInfo commandPoolCreateInfo  = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    transferCommandPoolCreateInfo.flags            = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    transferCommandPoolCreateInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
 
     for (size_t i = 0; i < swapchainImageCount; ++i) {
-        VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPools[i]));
+        VK_CHECK(vkCreateCommandPool(device, &transferCommandPoolCreateInfo, nullptr, &commandPools[i]));
     }
 
     std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
