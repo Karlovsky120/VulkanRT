@@ -53,12 +53,15 @@
 #define FOV    glm::radians(100.0f)
 #define NEAR   0.001f
 
+#define ACCELERATION_FACTOR 300.0f
+
 #define MAX_FRAMES_IN_FLIGHT 2
 #define UI_UPDATE_PERIOD     500'000
 
 struct Camera {
-    glm::vec2 rotation = glm::vec2();
-    glm::vec3 position = glm::vec3();
+    glm::vec2 orientation = glm::vec2();
+    glm::vec3 position    = glm::vec3();
+    glm::vec3 velocity    = glm::vec3();
 };
 
 #ifdef _DEBUG
@@ -601,32 +604,32 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushD
 
     float rotateSpeedModifier = 0.001f;
 
-    camera.rotation.x += rotateSpeedModifier * mouseX;
-    if (camera.rotation.x > 2.0f * PI) {
-        camera.rotation.x -= 2.0f * PI;
-    } else if (camera.rotation.x < 0.0f) {
-        camera.rotation.x += 2.0f * PI;
+    camera.orientation.x += rotateSpeedModifier * mouseX;
+    if (camera.orientation.x > 2.0f * PI) {
+        camera.orientation.x -= 2.0f * PI;
+    } else if (camera.orientation.x < 0.0f) {
+        camera.orientation.x += 2.0f * PI;
     }
 
     float epsilon = 0.00001f;
 
-    camera.rotation.y += rotateSpeedModifier * mouseY;
-    if (camera.rotation.y > PI * 0.5f) {
-        camera.rotation.y = PI * 0.5f - epsilon;
-    } else if (camera.rotation.y < -PI * 0.5f) {
-        camera.rotation.y = -PI * 0.5f + epsilon;
+    camera.orientation.y += rotateSpeedModifier * mouseY;
+    if (camera.orientation.y > PI * 0.5f) {
+        camera.orientation.y = PI * 0.5f - epsilon;
+    } else if (camera.orientation.y < -PI * 0.5f) {
+        camera.orientation.y = -PI * 0.5f + epsilon;
     }
 
     glm::vec3 globalUp      = glm::vec3(0.0f, -1.0f, 0.0f);
     glm::vec3 globalRight   = glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 globalForward = glm::vec3(0.0f, 0.0f, -1.0f);
 
-    glm::vec3 forward = glm::rotate(globalForward, camera.rotation.x, globalUp);
-    glm::vec3 right   = glm::rotate(globalRight, camera.rotation.x, globalUp);
+    glm::vec3 forward = glm::rotate(globalForward, camera.orientation.x, globalUp);
+    glm::vec3 right   = glm::rotate(globalRight, camera.orientation.x, globalUp);
 
     pushData.rotation = glm::identity<glm::mat4>();
-    pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.rotation.x), globalUp);
-    pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.rotation.y), globalRight);
+    pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.orientation.x), globalUp);
+    pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.orientation.y), globalRight);
 
     glm::vec3 deltaPosition = glm::vec3();
 
@@ -654,10 +657,18 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushD
         deltaPosition -= globalUp;
     }
 
+    float dt = frameTime * 0.000001f; // Time in seconds
+
+    glm::vec3 acceleration = glm::vec3();
     if (deltaPosition != glm::vec3()) {
-        float moveSpeedModifier = 0.000005f;
-        camera.position += frameTime * moveSpeedModifier * glm::normalize(deltaPosition);
+        acceleration = glm::normalize(deltaPosition) * ACCELERATION_FACTOR;
     }
+    glm::vec3 offset = (0.5f * acceleration * dt + camera.velocity) * dt;
+
+    camera.velocity += acceleration * dt;
+    camera.velocity *= 0.99f;
+
+    camera.position += offset;
 
     pushData.position = camera.position;
 }
@@ -1092,9 +1103,9 @@ int main(int argc, char* argv[]) {
     commandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     commandBufferAllocateInfo.commandBufferCount          = 1;
 
-    Camera camera   = {};
-    camera.rotation = glm::vec2(0.0f, 0.0f);
-    camera.position = glm::vec3(0.0f, 0.0f, 2.5f);
+    Camera camera      = {};
+    camera.orientation = glm::vec2(0.0f, 0.0f);
+    camera.position    = glm::vec3(0.0f, 0.0f, 2.5f);
 
     PushData pushData            = {};
     pushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
