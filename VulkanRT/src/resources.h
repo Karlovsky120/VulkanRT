@@ -10,11 +10,20 @@
 #include <vector>
 #pragma warning(pop)
 
+struct Buffer {
+    VkBuffer       buffer;
+    VkDeviceMemory bufferMemory;
+};
+
 VkImage createImage(const VkDevice device, const VkExtent2D imageSize, const VkImageUsageFlags imageUsageFlags, const VkFormat imageFormat);
 
 VkImageView createImageView(const VkDevice device, const VkImage image, const VkFormat format, const VkImageAspectFlags aspectMask);
 
 VkBuffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, const VkBufferUsageFlags bufferUsageFlags);
+
+Buffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, const VkBufferUsageFlags bufferUsageFlags,
+                    const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkMemoryPropertyFlags memoryPropertyFlags,
+                    const VkMemoryAllocateFlags memoryAllocateFlags = 0);
 
 template <typename T>
 void uploadToDeviceLocalBuffer(const VkDevice device, const std::vector<T>& data, const VkBuffer stagingBuffer, const VkDeviceMemory stagingBufferMemory,
@@ -57,5 +66,6 @@ void uploadToDeviceLocalBuffer(const VkDevice device, const std::vector<T>& data
 uint32_t findMemoryType(const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties, const uint32_t memoryTypeBits,
                         const VkMemoryPropertyFlags memoryPropertyFlags);
 
-VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements& memoryRequirements, const VkMemoryPropertyFlags memoryPropertyFlags,
-                                          const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties);
+VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements& memoryRequirements,
+                                          const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties,
+                                          const VkMemoryPropertyFlags memoryPropertyFlags, const VkMemoryAllocateFlags memoryAllocateFlags = 0);

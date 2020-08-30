@@ -56,7 +56,24 @@ VkBuffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, cons
     return buffer;
 }
 
-uint32_t findMemoryType(const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties, const uint32_t memoryTypeBits, const VkMemoryPropertyFlags memoryPropertyFlags) {
+Buffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, const VkBufferUsageFlags bufferUsageFlags,
+                    const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkMemoryPropertyFlags memoryPropertyFlags,
+                    const VkMemoryAllocateFlags memoryAllocateFlags) {
+
+    Buffer buffer;
+    buffer.buffer = createBuffer(device, bufferSize, bufferUsageFlags);
+
+    VkMemoryRequirements memoryRequirements = {};
+    vkGetBufferMemoryRequirements(device, buffer.buffer, &memoryRequirements);
+
+    buffer.bufferMemory = allocateVulkanObjectMemory(device, memoryRequirements, physicalDeviceMemoryProperties, memoryPropertyFlags, memoryAllocateFlags);
+    vkBindBufferMemory(device, buffer.buffer, buffer.bufferMemory, 0);
+
+    return buffer;
+}
+
+uint32_t findMemoryType(const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties, const uint32_t memoryTypeBits,
+                        const VkMemoryPropertyFlags memoryPropertyFlags) {
     uint32_t memoryType = UINT32_MAX;
     for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; ++i) {
         bool memoryIsOfRequiredType        = memoryTypeBits & (1 << i);
@@ -75,14 +92,21 @@ uint32_t findMemoryType(const VkPhysicalDeviceMemoryProperties& physicalDeviceMe
     return memoryType;
 }
 
-VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements& memoryRequirements, const VkMemoryPropertyFlags memoryPropertyFlags,
-                                          const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties) {
+VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements& memoryRequirements,
+                                          const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties,
+                                          const VkMemoryPropertyFlags memoryPropertyFlags, const VkMemoryAllocateFlags memoryAllocateFlags) {
 
     uint32_t memoryType = findMemoryType(physicalDeviceMemoryProperties, memoryRequirements.memoryTypeBits, memoryPropertyFlags);
 
     VkMemoryAllocateInfo memoryAllocateInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
     memoryAllocateInfo.allocationSize       = memoryRequirements.size;
     memoryAllocateInfo.memoryTypeIndex      = memoryType;
+
+    VkMemoryAllocateFlagsInfo memoryAllocateFlagsInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO};
+    if (memoryAllocateFlags != 0) {
+        memoryAllocateFlagsInfo.flags = memoryAllocateFlags;
+        memoryAllocateInfo.pNext      = &memoryAllocateFlagsInfo;
+    }
 
     VkDeviceMemory memory = 0;
     VK_CHECK(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &memory));

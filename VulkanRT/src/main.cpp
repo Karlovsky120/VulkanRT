@@ -517,7 +517,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D32_SFLOAT_S8_UINT);
     VkMemoryRequirements depthImageMemoryRequirements;
     vkGetImageMemoryRequirements(device, depthImage, &depthImageMemoryRequirements);
-    depthImageMemory = allocateVulkanObjectMemory(device, depthImageMemoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physicalDeviceMemoryProperties);
+    depthImageMemory = allocateVulkanObjectMemory(device, depthImageMemoryRequirements, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     vkBindImageMemory(device, depthImage, depthImageMemory, 0);
     depthImageView = createImageView(device, depthImage, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
@@ -693,7 +693,7 @@ int main(int argc, char* argv[]) {
         VkMemoryRequirements depthImageMemoryRequirements;
         vkGetImageMemoryRequirements(device, depthImage, &depthImageMemoryRequirements);
         depthImageMemory =
-            allocateVulkanObjectMemory(device, depthImageMemoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physicalDeviceMemoryProperties);
+            allocateVulkanObjectMemory(device, depthImageMemoryRequirements, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     } catch (std::runtime_error& e) {
         printf("%s", e.what());
 
@@ -722,14 +722,8 @@ int main(int argc, char* argv[]) {
 
     std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 
-    VkBuffer stagingBuffer = createBuffer(device, STAGING_BUFFER_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-
-    VkMemoryRequirements stagingBufferMemoryRequirements;
-    vkGetBufferMemoryRequirements(device, stagingBuffer, &stagingBufferMemoryRequirements);
-
-    VkDeviceMemory stagingBufferMemory =
-        allocateVulkanObjectMemory(device, stagingBufferMemoryRequirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, physicalDeviceMemoryProperties);
-    vkBindBufferMemory(device, stagingBuffer, stagingBufferMemory, 0);
+     Buffer stagingBuffer =
+        createBuffer(device, STAGING_BUFFER_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
     VkCommandPoolCreateInfo transferCommandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     transferCommandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -755,15 +749,10 @@ int main(int argc, char* argv[]) {
     // clang-format on
 
     uint32_t             vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
-    VkBuffer             vertexBuffer     = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-    VkMemoryRequirements vertexBufferMemoryRequirements = {};
-    vkGetBufferMemoryRequirements(device, vertexBuffer, &vertexBufferMemoryRequirements);
+    Buffer               vertexBuffer      = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                      physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    VkDeviceMemory vertexBufferMemory =
-        allocateVulkanObjectMemory(device, vertexBufferMemoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physicalDeviceMemoryProperties);
-    vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
-
-    uploadToDeviceLocalBuffer(device, cubeVertices, stagingBuffer, stagingBufferMemory, vertexBuffer, transferCommandPool, queue);
+    uploadToDeviceLocalBuffer(device, cubeVertices, stagingBuffer.buffer, stagingBuffer.bufferMemory, vertexBuffer.buffer, transferCommandPool, queue);
 
     // clang-format off
     std::vector<uint16_t> cubeIndices = {
@@ -776,21 +765,16 @@ int main(int argc, char* argv[]) {
     };
     // clang-format on
 
-    uint32_t             indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
-    VkBuffer             indexBuffer     = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-    VkMemoryRequirements indexBufferMemoryRequirements = {};
-    vkGetBufferMemoryRequirements(device, indexBuffer, &indexBufferMemoryRequirements);
+    uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
+    Buffer   indexBuffer     = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                      physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    VkDeviceMemory indexBufferMemory =
-        allocateVulkanObjectMemory(device, indexBufferMemoryRequirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, physicalDeviceMemoryProperties);
-    vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0);
-
-    uploadToDeviceLocalBuffer(device, cubeIndices, stagingBuffer, stagingBufferMemory, indexBuffer, transferCommandPool, queue);
+    uploadToDeviceLocalBuffer(device, cubeIndices, stagingBuffer.buffer, stagingBuffer.bufferMemory, indexBuffer.buffer, transferCommandPool, queue);
 
     vkDestroyCommandPool(device, transferCommandPool, nullptr);
 
-    vkFreeMemory(device, stagingBufferMemory, nullptr);
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBuffer.bufferMemory, nullptr);
+    vkDestroyBuffer(device, stagingBuffer.buffer, nullptr);
 
     VkDescriptorSetLayoutBinding descriptorSetLayoutBindings[2] = {};
 
@@ -860,11 +844,11 @@ int main(int argc, char* argv[]) {
     vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
 
     VkDescriptorBufferInfo descriptorBufferInfos[2] = {};
-    descriptorBufferInfos[0].buffer                 = vertexBuffer;
+    descriptorBufferInfos[0].buffer                 = vertexBuffer.buffer;
     descriptorBufferInfos[0].offset                 = 0;
     descriptorBufferInfos[0].range                  = vertexBufferSize;
 
-    descriptorBufferInfos[1].buffer = indexBuffer;
+    descriptorBufferInfos[1].buffer = indexBuffer.buffer;
     descriptorBufferInfos[1].offset = 0;
     descriptorBufferInfos[1].range  = indexBufferSize;
 
@@ -1032,11 +1016,11 @@ int main(int argc, char* argv[]) {
 
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
-    vkDestroyBuffer(device, indexBuffer, nullptr);
-    vkFreeMemory(device, indexBufferMemory, nullptr);
+    vkDestroyBuffer(device, indexBuffer.buffer, nullptr);
+    vkFreeMemory(device, indexBuffer.bufferMemory, nullptr);
 
-    vkDestroyBuffer(device, vertexBuffer, nullptr);
-    vkFreeMemory(device, vertexBufferMemory, nullptr);
+    vkDestroyBuffer(device, vertexBuffer.buffer, nullptr);
+    vkFreeMemory(device, vertexBuffer.bufferMemory, nullptr);
 
     for (VkFramebuffer& framebuffer : framebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
