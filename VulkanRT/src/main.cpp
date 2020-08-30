@@ -28,6 +28,7 @@
 #include "glm/vec3.hpp"
 
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <stdexcept>
 #include <vector>
@@ -53,6 +54,7 @@
 #define NEAR   0.001f
 
 #define MAX_FRAMES_IN_FLIGHT 2
+#define UI_UPDATE_PERIOD     500'000
 
 struct Camera {
     glm::vec2 rotation = glm::vec2();
@@ -541,8 +543,8 @@ VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipeline
 }
 
 void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass renderPass, const VkFramebuffer& framebuffer, const VkExtent2D renderArea,
-                         const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet,
-                         const PushData& pushData, uint32_t indexCount) {
+                         const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet, const PushData& pushData,
+                         uint32_t indexCount) {
     VkCommandBufferBeginInfo commandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
     VkViewport viewport = {};
@@ -587,7 +589,7 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
 
-void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushData) {
+void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushData, const uint32_t frameTime) {
     double mouseXInput;
     double mouseYInput;
 
@@ -599,16 +601,16 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushD
 
     float rotateSpeedModifier = 0.001f;
 
-    camera.rotation.x += mouseX * rotateSpeedModifier;
+    camera.rotation.x += rotateSpeedModifier * mouseX;
     if (camera.rotation.x > 2.0f * PI) {
         camera.rotation.x -= 2.0f * PI;
     } else if (camera.rotation.x < 0.0f) {
         camera.rotation.x += 2.0f * PI;
     }
 
-    float epsilon = 0.0001f;
+    float epsilon = 0.00001f;
 
-    camera.rotation.y += mouseY * rotateSpeedModifier;
+    camera.rotation.y += rotateSpeedModifier * mouseY;
     if (camera.rotation.y > PI * 0.5f) {
         camera.rotation.y = PI * 0.5f - epsilon;
     } else if (camera.rotation.y < -PI * 0.5f) {
@@ -625,8 +627,6 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushD
     pushData.rotation = glm::identity<glm::mat4>();
     pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.rotation.x), globalUp);
     pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.rotation.y), globalRight);
-
-    float moveSpeedModifier = 0.005f;
 
     glm::vec3 deltaPosition = glm::vec3();
 
@@ -655,7 +655,8 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushD
     }
 
     if (deltaPosition != glm::vec3()) {
-        camera.position += glm::normalize(deltaPosition) * moveSpeedModifier;
+        float moveSpeedModifier = 0.000005f;
+        camera.position += frameTime * moveSpeedModifier * glm::normalize(deltaPosition);
     }
 
     pushData.position = camera.position;
@@ -1095,12 +1096,15 @@ int main(int argc, char* argv[]) {
     camera.rotation = glm::vec2(0.0f, 0.0f);
     camera.position = glm::vec3(0.0f, 0.0f, 2.5f);
 
-    PushData pushData       = {};
+    PushData pushData            = {};
     pushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
     pushData.oneOverAspectRatio  = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
     pushData.near                = NEAR;
 
     uint32_t currentFrame = 0;
+
+    std::chrono::high_resolution_clock::time_point oldTime = std::chrono::high_resolution_clock::now();
+    uint32_t                                       time    = 0;
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -1131,10 +1135,22 @@ int main(int argc, char* argv[]) {
 
         VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffers[imageIndex]));
 
-        updateCameraAndPushData(window, camera, pushData);
+        std::chrono::high_resolution_clock::time_point newTime = std::chrono::high_resolution_clock::now();
+        uint32_t frameTime = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(newTime - oldTime).count());
+        oldTime            = newTime;
+        time += frameTime;
 
-        recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, pipeline, pipelineLayout, descriptorSet,
-                            pushData, static_cast<uint32_t>(cubeIndices.size()));
+        if (time > UI_UPDATE_PERIOD) {
+            char title[256];
+            sprintf_s(title, "Frametime: %.2fms", frameTime / 1'000.0f);
+            glfwSetWindowTitle(window, title);
+            time = 0;
+        }
+
+        updateCameraAndPushData(window, camera, pushData, frameTime);
+
+        recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, pipeline, pipelineLayout, descriptorSet, pushData,
+                            static_cast<uint32_t>(cubeIndices.size()));
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
