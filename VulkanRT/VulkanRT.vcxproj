@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\resources.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="src\Shaders\vertexShader.vert">
@@ -25,6 +26,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="sharedStructures.h" />
+    <ClInclude Include="src\common.h" />
+    <ClInclude Include="src\resources.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

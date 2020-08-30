@@ -1,26 +1,18 @@
-#pragma warning(disable : 26812) // Prefer 'enum class' over 'enum'.
+#include "common.h"
 
-#ifndef _DEBUG
-#pragma warning(disable : 4189) // *: local variable is initialized but not referenced
-#pragma warning(disable : 4464) // Relative include path contains '..'
-#pragma warning(disable : 4514) // *: unreferenced inline function has been removed
-#pragma warning(disable : 4710) // * function not inlined
-#pragma warning(disable : 4711) // Function * selected for automatic line expansion
-#endif
-
-#define VK_ENABLE_BETA_EXTENSIONS
-#define VOLK_IMPLEMENTATION
-#define GLFW_INCLUDE_VULKAN
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_XYZW_ONLY
-
+#include "resources.h"
 #include "sharedStructures.h"
 
 #pragma warning(push, 0)
+#define VK_ENABLE_BETA_EXTENSIONS
+#define VOLK_IMPLEMENTATION
 #include "volk.h"
 
+#define GLFW_INCLUDE_VULKAN
 #include "glfw3.h"
 
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_XYZW_ONLY
 #include "glm/fwd.hpp"
 #include "glm/gtx/rotate_vector.hpp"
 #include "glm/mat4x4.hpp"
@@ -33,14 +25,6 @@
 #include <stdexcept>
 #include <vector>
 #pragma warning(pop)
-
-#define ARRAYSIZE(object) sizeof(object) / sizeof(object[0])
-
-#define VK_CHECK(call)                                                                                                                                         \
-    {                                                                                                                                                          \
-        VkResult result = call;                                                                                                                                \
-        assert(result == VK_SUCCESS);                                                                                                                          \
-    }
 
 #define API_DUMP 0
 #define VERBOSE  0
@@ -300,85 +284,6 @@ std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, const VkS
     return swapchainImageViews;
 }
 
-VkImage createImage(const VkDevice device, const VkExtent2D imageSize, const VkImageUsageFlags imageUsageFlags, const VkFormat imageFormat) {
-    VkImageCreateInfo imageCreateInfo = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-    imageCreateInfo.imageType         = VK_IMAGE_TYPE_2D;
-    imageCreateInfo.usage             = imageUsageFlags;
-    imageCreateInfo.initialLayout     = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageCreateInfo.format            = imageFormat;
-    imageCreateInfo.extent            = {imageSize.width, imageSize.height, 1};
-    imageCreateInfo.samples           = VK_SAMPLE_COUNT_1_BIT;
-    imageCreateInfo.tiling            = VK_IMAGE_TILING_OPTIMAL;
-    imageCreateInfo.sharingMode       = VK_SHARING_MODE_EXCLUSIVE;
-    imageCreateInfo.mipLevels         = 1;
-    imageCreateInfo.arrayLayers       = 1;
-
-    VkImage image = 0;
-    VK_CHECK(vkCreateImage(device, &imageCreateInfo, nullptr, &image));
-
-    return image;
-}
-
-VkBuffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, const VkBufferUsageFlags bufferUsageFlags) {
-    VkBufferCreateInfo bufferCreateInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bufferCreateInfo.size               = bufferSize;
-    bufferCreateInfo.usage              = bufferUsageFlags;
-    bufferCreateInfo.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
-
-    VkBuffer buffer = 0;
-    VK_CHECK(vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer));
-
-    return buffer;
-}
-
-VkImageView createImageView(const VkDevice device, const VkImage image, const VkFormat format, const VkImageAspectFlags aspectMask) {
-    VkImageViewCreateInfo imageViewCreateInfo           = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-    imageViewCreateInfo.image                           = image;
-    imageViewCreateInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    imageViewCreateInfo.format                          = format;
-    imageViewCreateInfo.components.r                    = VK_COMPONENT_SWIZZLE_IDENTITY;
-    imageViewCreateInfo.components.g                    = VK_COMPONENT_SWIZZLE_IDENTITY;
-    imageViewCreateInfo.components.b                    = VK_COMPONENT_SWIZZLE_IDENTITY;
-    imageViewCreateInfo.components.a                    = VK_COMPONENT_SWIZZLE_IDENTITY;
-    imageViewCreateInfo.subresourceRange.aspectMask     = aspectMask;
-    imageViewCreateInfo.subresourceRange.baseMipLevel   = 0;
-    imageViewCreateInfo.subresourceRange.levelCount     = 1;
-    imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-    imageViewCreateInfo.subresourceRange.layerCount     = 1;
-
-    VkImageView imageView = 0;
-    VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &imageView));
-
-    return imageView;
-}
-
-VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements memoryRequirements, const VkMemoryPropertyFlags memoryPropertyFlags,
-                                          const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties) {
-    uint32_t memoryType = UINT32_MAX;
-    for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; ++i) {
-        bool memoryIsOfRequiredType        = memoryRequirements.memoryTypeBits & (1 << i);
-        bool memoryHasDesiredPropertyFlags = (physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags;
-
-        if (memoryIsOfRequiredType && memoryHasDesiredPropertyFlags) {
-            memoryType = i;
-            break;
-        }
-    }
-
-    if (memoryType == UINT32_MAX) {
-        throw std::runtime_error("Couldn't find memory type for depth image!");
-    }
-
-    VkMemoryAllocateInfo memoryAllocateInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    memoryAllocateInfo.allocationSize       = memoryRequirements.size;
-    memoryAllocateInfo.memoryTypeIndex      = memoryType;
-
-    VkDeviceMemory memory = 0;
-    VK_CHECK(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &memory));
-
-    return memory;
-}
-
 VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceFormat) {
     VkAttachmentDescription attachments[2] = {};
     attachments[0].format                  = surfaceFormat;
@@ -592,44 +497,6 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     vkCmdEndRenderPass(commandBuffer);
 
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
-}
-
-template <typename T>
-void uploadToDeviceLocalBuffer(const VkDevice device, const std::vector<T>& data, const VkBuffer stagingBuffer, const VkDeviceMemory stagingBufferMemory,
-                         const VkBuffer deviceBuffer, const VkCommandPool transferCommandPool, const VkQueue queue) {
-    uint32_t bufferSize = sizeof(T) * static_cast<uint32_t>(data.size());
-
-    void* stagingBufferPointer;
-    VK_CHECK(vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &stagingBufferPointer));
-    memcpy(stagingBufferPointer, data.data(), bufferSize);
-    vkUnmapMemory(device, stagingBufferMemory);
-
-    VkCommandBufferAllocateInfo transferCommandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    transferCommandBufferAllocateInfo.commandPool                 = transferCommandPool;
-    transferCommandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    transferCommandBufferAllocateInfo.commandBufferCount          = 1;
-
-    VkCommandBuffer transferCommandBuffer = 0;
-    VK_CHECK(vkAllocateCommandBuffers(device, &transferCommandBufferAllocateInfo, &transferCommandBuffer));
-
-    VkCommandBufferBeginInfo transferCommandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    VK_CHECK(vkBeginCommandBuffer(transferCommandBuffer, &transferCommandBufferBeginInfo));
-
-    VkBufferCopy bufferCopy = {};
-    bufferCopy.srcOffset    = 0;
-    bufferCopy.dstOffset    = 0;
-    bufferCopy.size         = bufferSize;
-    vkCmdCopyBuffer(transferCommandBuffer, stagingBuffer, deviceBuffer, 1, &bufferCopy);
-    VK_CHECK(vkEndCommandBuffer(transferCommandBuffer));
-
-    VkSubmitInfo transferSubmitInfo       = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    transferSubmitInfo.commandBufferCount = 1;
-    transferSubmitInfo.pCommandBuffers    = &transferCommandBuffer;
-
-    VK_CHECK(vkQueueSubmit(queue, 1, &transferSubmitInfo, VK_NULL_HANDLE));
-    vkDeviceWaitIdle(device);
-
-    vkFreeCommandBuffers(device, transferCommandPool, 1, &transferCommandBuffer);
 }
 
 void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushData, const uint32_t frameTime) {
