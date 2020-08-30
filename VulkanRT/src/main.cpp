@@ -754,10 +754,6 @@ int main(int argc, char* argv[]) {
     };
     // clang-format on
 
-    for (float& vertex : cubeVertices) {
-        vertex *= 2.0f;
-    }
-
     uint32_t             vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
     VkBuffer             vertexBuffer     = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     VkMemoryRequirements vertexBufferMemoryRequirements = {};
