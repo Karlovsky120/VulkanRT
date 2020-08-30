@@ -54,5 +54,8 @@ void uploadToDeviceLocalBuffer(const VkDevice device, const std::vector<T>& data
     vkFreeCommandBuffers(device, transferCommandPool, 1, &transferCommandBuffer);
 }
 
-VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements memoryRequirements, const VkMemoryPropertyFlags memoryPropertyFlags,
-                                          const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties);
+uint32_t findMemoryType(const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties, const uint32_t memoryTypeBits,
+                        const VkMemoryPropertyFlags memoryPropertyFlags);
+
+VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements& memoryRequirements, const VkMemoryPropertyFlags memoryPropertyFlags,
+                                          const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties);

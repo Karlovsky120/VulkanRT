@@ -56,11 +56,10 @@ VkBuffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, cons
     return buffer;
 }
 
-VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements memoryRequirements, const VkMemoryPropertyFlags memoryPropertyFlags,
-                                          const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties) {
+uint32_t findMemoryType(const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties, const uint32_t memoryTypeBits, const VkMemoryPropertyFlags memoryPropertyFlags) {
     uint32_t memoryType = UINT32_MAX;
     for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; ++i) {
-        bool memoryIsOfRequiredType        = memoryRequirements.memoryTypeBits & (1 << i);
+        bool memoryIsOfRequiredType        = memoryTypeBits & (1 << i);
         bool memoryHasDesiredPropertyFlags = (physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags;
 
         if (memoryIsOfRequiredType && memoryHasDesiredPropertyFlags) {
@@ -72,6 +71,14 @@ VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryR
     if (memoryType == UINT32_MAX) {
         throw std::runtime_error("Couldn't find memory type for depth image!");
     }
+
+    return memoryType;
+}
+
+VkDeviceMemory allocateVulkanObjectMemory(const VkDevice device, const VkMemoryRequirements& memoryRequirements, const VkMemoryPropertyFlags memoryPropertyFlags,
+                                          const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties) {
+
+    uint32_t memoryType = findMemoryType(physicalDeviceMemoryProperties, memoryRequirements.memoryTypeBits, memoryPropertyFlags);
 
     VkMemoryAllocateInfo memoryAllocateInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
     memoryAllocateInfo.allocationSize       = memoryRequirements.size;
