@@ -66,8 +66,15 @@ Buffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, const 
     VkMemoryRequirements memoryRequirements = {};
     vkGetBufferMemoryRequirements(device, buffer.buffer, &memoryRequirements);
 
-    buffer.bufferMemory = allocateVulkanObjectMemory(device, memoryRequirements, physicalDeviceMemoryProperties, memoryPropertyFlags, memoryAllocateFlags);
-    vkBindBufferMemory(device, buffer.buffer, buffer.bufferMemory, 0);
+    buffer.memory = allocateVulkanObjectMemory(device, memoryRequirements, physicalDeviceMemoryProperties, memoryPropertyFlags, memoryAllocateFlags);
+    vkBindBufferMemory(device, buffer.buffer, buffer.memory, 0);
+
+    if (memoryPropertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT && memoryAllocateFlags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT) {
+        VkBufferDeviceAddressInfo deviceAddressInfo;
+        deviceAddressInfo.buffer = buffer.buffer;
+
+        buffer.deviceAddress = vkGetBufferDeviceAddress(device, &deviceAddressInfo);
+    }
 
     return buffer;
 }

@@ -776,7 +776,7 @@ int main(int argc, char* argv[]) {
     Buffer               vertexBuffer      = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                       physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    uploadToDeviceLocalBuffer(device, cubeVertices, stagingBuffer.buffer, stagingBuffer.bufferMemory, vertexBuffer.buffer, transferCommandPool, queue);
+    uploadToDeviceLocalBuffer(device, cubeVertices, stagingBuffer.buffer, stagingBuffer.memory, vertexBuffer.buffer, transferCommandPool, queue);
 
     // clang-format off
     std::vector<uint16_t> cubeIndices = {
@@ -793,11 +793,11 @@ int main(int argc, char* argv[]) {
     Buffer   indexBuffer     = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                       physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    uploadToDeviceLocalBuffer(device, cubeIndices, stagingBuffer.buffer, stagingBuffer.bufferMemory, indexBuffer.buffer, transferCommandPool, queue);
+    uploadToDeviceLocalBuffer(device, cubeIndices, stagingBuffer.buffer, stagingBuffer.memory, indexBuffer.buffer, transferCommandPool, queue);
 
     vkDestroyCommandPool(device, transferCommandPool, nullptr);
 
-    vkFreeMemory(device, stagingBuffer.bufferMemory, nullptr);
+    vkFreeMemory(device, stagingBuffer.memory, nullptr);
     vkDestroyBuffer(device, stagingBuffer.buffer, nullptr);
 
     VkDescriptorSetLayoutBinding descriptorSetLayoutBindings[2] = {};
@@ -1041,10 +1041,10 @@ int main(int argc, char* argv[]) {
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
     vkDestroyBuffer(device, indexBuffer.buffer, nullptr);
-    vkFreeMemory(device, indexBuffer.bufferMemory, nullptr);
+    vkFreeMemory(device, indexBuffer.memory, nullptr);
 
     vkDestroyBuffer(device, vertexBuffer.buffer, nullptr);
-    vkFreeMemory(device, vertexBuffer.bufferMemory, nullptr);
+    vkFreeMemory(device, vertexBuffer.memory, nullptr);
 
     for (VkFramebuffer& framebuffer : framebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);

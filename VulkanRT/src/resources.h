@@ -11,8 +11,9 @@
 #pragma warning(pop)
 
 struct Buffer {
-    VkBuffer       buffer;
-    VkDeviceMemory bufferMemory;
+    VkBuffer        buffer;
+    VkDeviceMemory  memory;
+    VkDeviceAddress deviceAddress;
 };
 
 VkImage createImage(const VkDevice device, const VkExtent2D imageSize, const VkImageUsageFlags imageUsageFlags, const VkFormat imageFormat);
