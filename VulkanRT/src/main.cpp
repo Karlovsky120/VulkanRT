@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "commandPools.h"
+#include "rayTracing.h"
 #include "resources.h"
 #include "sharedStructures.h"
 #include "swapchain.h"
@@ -174,16 +175,26 @@ VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKH
         vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionPropertyCount, nullptr);
 
         std::vector<VkExtensionProperties> extensionPropertiess(extensionPropertyCount);
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionPropertyCount, extensionPropertiess.data());
 
-        bool rayTracingSupported = false;
+        bool rayTracingSupported             = false;
+        bool defferedHostOperationsSupported = false; // Required for VK_KHR_ray_tracing
+        bool pipelineLibrarySupported        = false; // Required for VK_KHR_ray_tracing
         for (VkExtensionProperties extensionProperties : extensionPropertiess) {
-            if (strcmp(extensionProperties.extensionName, VK_KHR_RAY_TRACING_EXTENSION_NAME)) {
+            if (strcmp(extensionProperties.extensionName, VK_KHR_RAY_TRACING_EXTENSION_NAME) == 0) {
                 rayTracingSupported = true;
+            } else if (strcmp(extensionProperties.extensionName, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME) == 0) {
+                defferedHostOperationsSupported = true;
+            } else if (strcmp(extensionProperties.extensionName, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME) == 0) {
+                pipelineLibrarySupported = true;
+            }
+
+            if (rayTracingSupported && defferedHostOperationsSupported && pipelineLibrarySupported) {
                 break;
             }
         }
 
-        if (!rayTracingSupported) {
+        if (!rayTracingSupported || !defferedHostOperationsSupported || !pipelineLibrarySupported) {
             continue;
         }
 
@@ -639,17 +650,25 @@ int main(int argc, char* argv[]) {
     deviceQueueCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
     deviceQueueCreateInfo.pQueuePriorities        = &queuePriorities;
 
-    const char* deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    std::vector<const char*> deviceExtensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_RAY_TRACING_EXTENSION_NAME,
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, // Required for VK_KHR_ray_tracing
+        VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME          // Required for VK_KHR_ray_tracing
+    };
 
     VkDeviceCreateInfo deviceCreateInfo      = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     deviceCreateInfo.queueCreateInfoCount    = 1;
     deviceCreateInfo.pQueueCreateInfos       = &deviceQueueCreateInfo;
-    deviceCreateInfo.enabledExtensionCount   = 1;
-    deviceCreateInfo.ppEnabledExtensionNames = &deviceExtensions;
+    deviceCreateInfo.enabledExtensionCount   = static_cast<uint32_t>(deviceExtensions.size());
+    deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.data();
+
+    VkPhysicalDeviceRayTracingFeaturesKHR physicalDeviceRayTracingFeatures = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_FEATURES_KHR};
+    physicalDeviceRayTracingFeatures.rayTracing                            = VK_TRUE;
 
     VkPhysicalDeviceVulkan12Features physicalDeviceVulkan12Features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     physicalDeviceVulkan12Features.scalarBlockLayout                = VK_TRUE;
     physicalDeviceVulkan12Features.bufferDeviceAddress              = VK_TRUE;
+    physicalDeviceVulkan12Features.pNext                            = &physicalDeviceRayTracingFeatures;
 
     VkPhysicalDeviceFeatures2 physicalDeviceFeatures2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     physicalDeviceFeatures2.pNext                     = &physicalDeviceVulkan12Features;
@@ -741,7 +760,7 @@ int main(int argc, char* argv[]) {
 
     std::vector<VkFramebuffer> framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 
-     Buffer stagingBuffer =
+    Buffer stagingBuffer =
         createBuffer(device, STAGING_BUFFER_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
     VkCommandPool transferCommandPool = createCommandPool(device, graphicsQueueFamilyIndex);
@@ -762,9 +781,12 @@ int main(int argc, char* argv[]) {
     };
     // clang-format on
 
-    uint32_t             vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
-    Buffer               vertexBuffer      = createBuffer(device, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                      physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VkBufferUsageFlags bufferUsageFlags =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR;
+
+    uint32_t vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
+    Buffer   vertexBuffer     = createBuffer(device, vertexBufferSize, bufferUsageFlags, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                       VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     uploadToDeviceLocalBuffer(device, cubeVertices, stagingBuffer.buffer, stagingBuffer.memory, vertexBuffer.buffer, transferCommandPool, queue);
 
@@ -780,8 +802,8 @@ int main(int argc, char* argv[]) {
     // clang-format on
 
     uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
-    Buffer   indexBuffer     = createBuffer(device, indexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                      physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    Buffer   indexBuffer     = createBuffer(device, indexBufferSize, bufferUsageFlags, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     uploadToDeviceLocalBuffer(device, cubeIndices, stagingBuffer.buffer, stagingBuffer.memory, indexBuffer.buffer, transferCommandPool, queue);
 
@@ -814,6 +836,10 @@ int main(int argc, char* argv[]) {
 
     VkPipelineCache pipelineCache = 0;
     VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
+
+    AccelerationStructure accelerationStructure = createBottomAccelerationStructure(
+        device, static_cast<uint32_t>(cubeVertices.size()), static_cast<uint32_t>(cubeIndices.size() / 3), vertexBuffer.deviceAddress,
+        indexBuffer.deviceAddress, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
 
     VkPushConstantRange pushConstantRange;
     pushConstantRange.offset     = 0;
@@ -878,9 +904,9 @@ int main(int argc, char* argv[]) {
 
     std::vector<VkCommandPool> commandPools(swapchainImageCount);
 
-    VkCommandPoolCreateInfo commandPoolCreateInfo  = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    commandPoolCreateInfo.flags                    = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    commandPoolCreateInfo.queueFamilyIndex         = graphicsQueueFamilyIndex;
+    VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    commandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
 
     for (size_t i = 0; i < swapchainImageCount; ++i) {
         VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPools[i]));
@@ -1023,6 +1049,9 @@ int main(int argc, char* argv[]) {
     }
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+
+    vkFreeMemory(device, accelerationStructure.memory, nullptr);
+    vkDestroyAccelerationStructureKHR(device, accelerationStructure.accelerationStructure, nullptr);
 
     vkDestroyPipeline(device, pipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);

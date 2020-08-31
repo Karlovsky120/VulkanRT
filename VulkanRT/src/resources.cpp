@@ -70,7 +70,7 @@ Buffer createBuffer(const VkDevice device, const VkDeviceSize bufferSize, const 
     vkBindBufferMemory(device, buffer.buffer, buffer.memory, 0);
 
     if (memoryPropertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT && memoryAllocateFlags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT) {
-        VkBufferDeviceAddressInfo deviceAddressInfo;
+        VkBufferDeviceAddressInfo deviceAddressInfo = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
         deviceAddressInfo.buffer = buffer.buffer;
 
         buffer.deviceAddress = vkGetBufferDeviceAddress(device, &deviceAddressInfo);
