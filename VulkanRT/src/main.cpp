@@ -861,9 +861,12 @@ int main(int argc, char* argv[]) {
     VkPipelineCache pipelineCache = 0;
     VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
 
-    AccelerationStructure accelerationStructure = createBottomAccelerationStructure(
+    AccelerationStructure bottomLevelAccelerationStructure = createBottomAccelerationStructure(
         device, static_cast<uint32_t>(cubeVertices.size()), static_cast<uint32_t>(cubeIndices.size() / 3), vertexBuffer.deviceAddress,
         indexBuffer.deviceAddress, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
+
+    AccelerationStructure topLevelAccelerationStructure =
+        createTopAccelerationStructure(device, bottomLevelAccelerationStructure, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
 
     VkPushConstantRange pushConstantRange;
     pushConstantRange.offset     = 0;
@@ -926,17 +929,21 @@ int main(int argc, char* argv[]) {
 
     vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 
-    std::vector<VkCommandPool> commandPools(swapchainImageCount);
-
     VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
     commandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
 
+    VkCommandBufferAllocateInfo commandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    commandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    commandBufferAllocateInfo.commandBufferCount          = 1;
+
+    std::vector<VkCommandPool> commandPools(swapchainImageCount);
+    std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
     for (size_t i = 0; i < swapchainImageCount; ++i) {
         VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPools[i]));
+        commandBufferAllocateInfo.commandPool = commandPools[i];
+        VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffers[i]));
     }
-
-    std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
 
     std::vector<VkSemaphore> imageAvailableSemaphores(MAX_FRAMES_IN_FLIGHT);
     std::vector<VkSemaphore> renderFinishedSemaphores(MAX_FRAMES_IN_FLIGHT);
@@ -952,10 +959,6 @@ int main(int argc, char* argv[]) {
         VK_CHECK(vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &renderFinishedSemaphores[i]));
         VK_CHECK(vkCreateFence(device, &fenceCreateInfo, nullptr, &inFlightFences[i]));
     }
-
-    VkCommandBufferAllocateInfo commandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    commandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    commandBufferAllocateInfo.commandBufferCount          = 1;
 
     Camera camera      = {};
     camera.orientation = glm::vec2(0.0f, 0.0f);
@@ -993,12 +996,7 @@ int main(int argc, char* argv[]) {
         }
         imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
-        vkFreeCommandBuffers(device, commandPools[imageIndex], 1, &commandBuffers[imageIndex]);
-
         vkResetCommandPool(device, commandPools[imageIndex], VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
-        commandBufferAllocateInfo.commandPool = commandPools[imageIndex];
-
-        VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffers[imageIndex]));
 
         std::chrono::high_resolution_clock::time_point newTime = std::chrono::high_resolution_clock::now();
         uint32_t frameTime = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(newTime - oldTime).count());
@@ -1074,8 +1072,11 @@ int main(int argc, char* argv[]) {
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
-    vkFreeMemory(device, accelerationStructure.memory, nullptr);
-    vkDestroyAccelerationStructureKHR(device, accelerationStructure.accelerationStructure, nullptr);
+    vkFreeMemory(device, topLevelAccelerationStructure.memory, nullptr);
+    vkDestroyAccelerationStructureKHR(device, topLevelAccelerationStructure.accelerationStructure, nullptr);
+
+    vkFreeMemory(device, bottomLevelAccelerationStructure.memory, nullptr);
+    vkDestroyAccelerationStructureKHR(device, bottomLevelAccelerationStructure.accelerationStructure, nullptr);
 
     vkDestroyPipeline(device, pipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);

@@ -18,3 +18,7 @@ AccelerationStructure createBottomAccelerationStructure(const VkDevice device, c
                                                         const VkDeviceAddress vertexBufferAddress, const VkDeviceAddress indexBufferAddress,
                                                         const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkQueue queue,
                                                         const uint32_t queueFamilyIndex);
+
+AccelerationStructure createTopAccelerationStructure(const VkDevice device, const AccelerationStructure bottomLevelAccelerationStructure,
+                                                     const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkQueue queue,
+                                                     const uint32_t queueFamilyIndex);
