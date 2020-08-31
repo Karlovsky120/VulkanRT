@@ -192,6 +192,17 @@ VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKH
     throw std::runtime_error("No suitable GPU found!");
 }
 
+VkCommandPool createCommandPool(const VkDevice device, const uint32_t queueFamilyIndex) {
+    VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    commandPoolCreateInfo.queueFamilyIndex        = queueFamilyIndex;
+
+    VkCommandPool commandPool = 0;
+    VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPool));
+
+    return commandPool;
+}
+
 VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceFormat) {
     VkAttachmentDescription attachments[2] = {};
     attachments[0].format                  = surfaceFormat;
@@ -743,12 +754,7 @@ int main(int argc, char* argv[]) {
      Buffer stagingBuffer =
         createBuffer(device, STAGING_BUFFER_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
-    VkCommandPoolCreateInfo transferCommandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    transferCommandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    transferCommandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
-
-    VkCommandPool transferCommandPool = 0;
-    VK_CHECK(vkCreateCommandPool(device, &transferCommandPoolCreateInfo, nullptr, &transferCommandPool));
+    VkCommandPool transferCommandPool = createCommandPool(device, graphicsQueueFamilyIndex);
 
     VkQueue queue = 0;
     vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &queue);
@@ -883,11 +889,11 @@ int main(int argc, char* argv[]) {
     std::vector<VkCommandPool> commandPools(swapchainImageCount);
 
     VkCommandPoolCreateInfo commandPoolCreateInfo  = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    transferCommandPoolCreateInfo.flags            = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    transferCommandPoolCreateInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
+    commandPoolCreateInfo.flags                    = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    commandPoolCreateInfo.queueFamilyIndex         = graphicsQueueFamilyIndex;
 
     for (size_t i = 0; i < swapchainImageCount; ++i) {
-        VK_CHECK(vkCreateCommandPool(device, &transferCommandPoolCreateInfo, nullptr, &commandPools[i]));
+        VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPools[i]));
     }
 
     std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
