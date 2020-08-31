@@ -618,6 +618,10 @@ int main(int argc, char* argv[]) {
     if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
         printf("Failed to create window surface!");
 
+#ifdef _DEBUG
+        vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
+#endif
+
         vkDestroyInstance(instance, nullptr);
 
         glfwTerminate();
@@ -632,6 +636,11 @@ int main(int argc, char* argv[]) {
         printf("%s", e.what());
 
         vkDestroySurfaceKHR(instance, surface, nullptr);
+
+#ifdef _DEBUG
+        vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
+#endif
+
         vkDestroyInstance(instance, nullptr);
 
         glfwTerminate();
@@ -689,6 +698,11 @@ int main(int argc, char* argv[]) {
 
         vkDestroyDevice(device, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
+
+#ifdef _DEBUG
+        vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
+#endif
+
         vkDestroyInstance(instance, nullptr);
 
         glfwTerminate();
@@ -706,6 +720,11 @@ int main(int argc, char* argv[]) {
 
         vkDestroyDevice(device, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
+
+#ifdef _DEBUG
+        vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
+#endif
+
         vkDestroyInstance(instance, nullptr);
 
         glfwTerminate();
@@ -745,6 +764,11 @@ int main(int argc, char* argv[]) {
         vkDestroyImage(device, depthImage, nullptr);
         vkDestroyDevice(device, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
+
+#ifdef _DEBUG
+        vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
+#endif
+
         vkDestroyInstance(instance, nullptr);
 
         glfwTerminate();
