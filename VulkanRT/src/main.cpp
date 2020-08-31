@@ -1,5 +1,6 @@
 #include "common.h"
 
+#include "commandPools.h"
 #include "resources.h"
 #include "sharedStructures.h"
 #include "swapchain.h"
@@ -190,17 +191,6 @@ VkPhysicalDevice pickPhysicalDevice(const VkInstance instance, const VkSurfaceKH
     }
 
     throw std::runtime_error("No suitable GPU found!");
-}
-
-VkCommandPool createCommandPool(const VkDevice device, const uint32_t queueFamilyIndex) {
-    VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    commandPoolCreateInfo.queueFamilyIndex        = queueFamilyIndex;
-
-    VkCommandPool commandPool = 0;
-    VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPool));
-
-    return commandPool;
 }
 
 VkRenderPass createRenderPass(const VkDevice device, const VkFormat surfaceFormat) {
