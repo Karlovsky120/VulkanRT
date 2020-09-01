@@ -836,25 +836,6 @@ int main(int argc, char* argv[]) {
     vkFreeMemory(device, stagingBuffer.memory, nullptr);
     vkDestroyBuffer(device, stagingBuffer.buffer, nullptr);
 
-    VkDescriptorSetLayoutBinding descriptorSetLayoutBindings[2] = {};
-
-    descriptorSetLayoutBindings[0].binding         = 0;
-    descriptorSetLayoutBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    descriptorSetLayoutBindings[0].descriptorCount = 1;
-    descriptorSetLayoutBindings[0].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
-
-    descriptorSetLayoutBindings[1].binding         = 1;
-    descriptorSetLayoutBindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    descriptorSetLayoutBindings[1].descriptorCount = 1;
-    descriptorSetLayoutBindings[1].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    descriptorSetLayoutCreateInfo.bindingCount                    = 2;
-    descriptorSetLayoutCreateInfo.pBindings                       = descriptorSetLayoutBindings;
-
-    VkDescriptorSetLayout descriptorSetLayout = 0;
-    VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout));
-
     VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
     pipelineCacheCreateInfo.initialDataSize           = 0;
 
@@ -873,6 +854,27 @@ int main(int argc, char* argv[]) {
     pushConstantRange.size       = sizeof(PushData);
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+    std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings(3);
+    descriptorSetLayoutBindings[0].binding         = 0;
+    descriptorSetLayoutBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorSetLayoutBindings[0].descriptorCount = 1;
+    descriptorSetLayoutBindings[0].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+    descriptorSetLayoutBindings[1].binding         = 1;
+    descriptorSetLayoutBindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorSetLayoutBindings[1].descriptorCount = 1;
+    descriptorSetLayoutBindings[1].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+    descriptorSetLayoutBindings[2].binding         = 2;
+    descriptorSetLayoutBindings[2].descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    descriptorSetLayoutBindings[2].descriptorCount = 1;
+    descriptorSetLayoutBindings[2].stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    descriptorSetLayoutCreateInfo.bindingCount                    = static_cast<uint32_t>(descriptorSetLayoutBindings.size());
+    descriptorSetLayoutCreateInfo.pBindings                       = descriptorSetLayoutBindings.data();
+
+    VkDescriptorSetLayout descriptorSetLayout = 0;
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout));
+
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pipelineLayoutCreateInfo.pushConstantRangeCount     = 1;
     pipelineLayoutCreateInfo.pPushConstantRanges        = &pushConstantRange;
@@ -890,13 +892,16 @@ int main(int argc, char* argv[]) {
     vkDestroyShaderModule(device, fragmentShader, nullptr);
     vkDestroyShaderModule(device, vertexShader, nullptr);
 
-    VkDescriptorPoolSize descriptorPoolSize = {};
-    descriptorPoolSize.type                 = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    descriptorPoolSize.descriptorCount      = 1;
+    // clang-format off
+    std::vector<VkDescriptorPoolSize> descriptorPoolSizes = {
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}
+    };
+    // clang-format on
 
     VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    descriptorPoolCreateInfo.poolSizeCount              = 1;
-    descriptorPoolCreateInfo.pPoolSizes                 = &descriptorPoolSize;
+    descriptorPoolCreateInfo.poolSizeCount              = static_cast<uint32_t>(descriptorPoolSizes.size());
+    descriptorPoolCreateInfo.pPoolSizes                 = descriptorPoolSizes.data();
     descriptorPoolCreateInfo.maxSets                    = 1;
 
     VkDescriptorPool descriptorPool = 0;
@@ -910,24 +915,35 @@ int main(int argc, char* argv[]) {
     VkDescriptorSet descriptorSet = 0;
     vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
 
-    VkDescriptorBufferInfo descriptorBufferInfos[2] = {};
-    descriptorBufferInfos[0].buffer                 = vertexBuffer.buffer;
-    descriptorBufferInfos[0].offset                 = 0;
-    descriptorBufferInfos[0].range                  = vertexBufferSize;
+    std::vector<VkDescriptorBufferInfo> descriptorBufferInfos(2);
+    descriptorBufferInfos[0].buffer = vertexBuffer.buffer;
+    descriptorBufferInfos[0].offset = 0;
+    descriptorBufferInfos[0].range  = vertexBufferSize;
 
     descriptorBufferInfos[1].buffer = indexBuffer.buffer;
     descriptorBufferInfos[1].offset = 0;
     descriptorBufferInfos[1].range  = indexBufferSize;
 
-    VkWriteDescriptorSet writeDescriptorSet = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    writeDescriptorSet.dstSet               = descriptorSet;
-    writeDescriptorSet.dstBinding           = 0;
-    writeDescriptorSet.dstArrayElement      = 0;
-    writeDescriptorSet.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writeDescriptorSet.descriptorCount      = 2;
-    writeDescriptorSet.pBufferInfo          = descriptorBufferInfos;
+    VkWriteDescriptorSetAccelerationStructureKHR writeDescriptorSetAccelerationStructure = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
+    writeDescriptorSetAccelerationStructure.accelerationStructureCount                   = 1;
+    writeDescriptorSetAccelerationStructure.pAccelerationStructures                      = &topLevelAccelerationStructure.accelerationStructure;
 
-    vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets(2, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
+    writeDescriptorSets[0].dstSet          = descriptorSet;
+    writeDescriptorSets[0].dstBinding      = 0;
+    writeDescriptorSets[0].dstArrayElement = 0;
+    writeDescriptorSets[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writeDescriptorSets[0].descriptorCount = static_cast<uint32_t>(descriptorBufferInfos.size());
+    writeDescriptorSets[0].pBufferInfo     = descriptorBufferInfos.data();
+
+    writeDescriptorSets[1].dstSet          = descriptorSet;
+    writeDescriptorSets[1].dstBinding      = 2;
+    writeDescriptorSets[1].dstArrayElement = 0;
+    writeDescriptorSets[1].descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    writeDescriptorSets[1].descriptorCount = 1;
+    writeDescriptorSets[1].pNext           = &writeDescriptorSetAccelerationStructure;
+
+    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
     VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -937,7 +953,7 @@ int main(int argc, char* argv[]) {
     commandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     commandBufferAllocateInfo.commandBufferCount          = 1;
 
-    std::vector<VkCommandPool> commandPools(swapchainImageCount);
+    std::vector<VkCommandPool>   commandPools(swapchainImageCount);
     std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
     for (size_t i = 0; i < swapchainImageCount; ++i) {
         VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPools[i]));
