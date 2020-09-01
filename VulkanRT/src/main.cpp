@@ -891,7 +891,7 @@ int main(int argc, char* argv[]) {
     vkDestroyShaderModule(device, vertexShader, nullptr);
 
     VkDescriptorPoolSize descriptorPoolSize = {};
-    descriptorPoolSize.type                 = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    descriptorPoolSize.type                 = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     descriptorPoolSize.descriptorCount      = 1;
 
     VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
