@@ -47,6 +47,10 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 #define UI_UPDATE_PERIOD     500'000
 
+#define INDEX_RAYGEN      0
+#define INDEX_CLOSEST_HIT 1
+#define INDEX_MISS        2
+
 struct Camera {
     glm::vec2 orientation = glm::vec2();
     glm::vec3 position    = glm::vec3();
@@ -299,54 +303,49 @@ VkShaderModule loadShader(const VkDevice device, const char* pathToSource) {
     return shaderModule;
 }
 
-VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipelineLayout, const VkShaderModule vertexShader, const VkShaderModule fragmentShader,
-                          const VkRenderPass renderPass, const VkPipelineCache pipelineCache) {
-    VkGraphicsPipelineCreateInfo pipelineCreateInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+VkPipeline createRasterPipeline(const VkDevice device, const VkPipelineLayout pipelineLayout, const VkShaderModule vertexShader,
+                                const VkShaderModule fragmentShader, const VkRenderPass renderPass, const VkPipelineCache pipelineCache) {
+    VkGraphicsPipelineCreateInfo createInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
 
-    std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+    std::vector<VkPipelineShaderStageCreateInfo> shaderStages(2, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO});
+    shaderStages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+    shaderStages[0].module = vertexShader;
+    shaderStages[0].pName  = "main";
 
-    VkPipelineShaderStageCreateInfo vertexStageInfo = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-    vertexStageInfo.stage                           = VK_SHADER_STAGE_VERTEX_BIT;
-    vertexStageInfo.module                          = vertexShader;
-    vertexStageInfo.pName                           = "main";
-    shaderStages.push_back(vertexStageInfo);
+    shaderStages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shaderStages[1].module = fragmentShader;
+    shaderStages[1].pName  = "main";
 
-    VkPipelineShaderStageCreateInfo fragmentStageInfo = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-    fragmentStageInfo.stage                           = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragmentStageInfo.module                          = fragmentShader;
-    fragmentStageInfo.pName                           = "main";
-    shaderStages.push_back(fragmentStageInfo);
-
-    pipelineCreateInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
-    pipelineCreateInfo.pStages    = shaderStages.data();
+    createInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
+    createInfo.pStages    = shaderStages.data();
 
     VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    pipelineCreateInfo.pVertexInputState                            = &vertexInputStateCreateInfo;
+    createInfo.pVertexInputState                                    = &vertexInputStateCreateInfo;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     inputAssemblyStateCreateInfo.topology                               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    pipelineCreateInfo.pInputAssemblyState                              = &inputAssemblyStateCreateInfo;
+    createInfo.pInputAssemblyState                                      = &inputAssemblyStateCreateInfo;
 
     VkPipelineViewportStateCreateInfo viewportStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     viewportStateCreateInfo.viewportCount                     = 1;
     viewportStateCreateInfo.scissorCount                      = 1;
-    pipelineCreateInfo.pViewportState                         = &viewportStateCreateInfo;
+    createInfo.pViewportState                                 = &viewportStateCreateInfo;
 
     VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     rasterizationStateCreateInfo.lineWidth                              = 1.0f;
     rasterizationStateCreateInfo.frontFace                              = VK_FRONT_FACE_CLOCKWISE;
     rasterizationStateCreateInfo.cullMode                               = VK_CULL_MODE_BACK_BIT;
-    pipelineCreateInfo.pRasterizationState                              = &rasterizationStateCreateInfo;
+    createInfo.pRasterizationState                                      = &rasterizationStateCreateInfo;
 
     VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     multisampleStateCreateInfo.rasterizationSamples                 = VK_SAMPLE_COUNT_1_BIT;
-    pipelineCreateInfo.pMultisampleState                            = &multisampleStateCreateInfo;
+    createInfo.pMultisampleState                                    = &multisampleStateCreateInfo;
 
     VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     depthStencilStateCreateInfo.depthTestEnable                       = true;
     depthStencilStateCreateInfo.depthWriteEnable                      = true;
     depthStencilStateCreateInfo.depthCompareOp                        = VK_COMPARE_OP_GREATER;
-    pipelineCreateInfo.pDepthStencilState                             = &depthStencilStateCreateInfo;
+    createInfo.pDepthStencilState                                     = &depthStencilStateCreateInfo;
 
     VkPipelineColorBlendAttachmentState colorBlendAttachmentState = {};
     colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -354,26 +353,70 @@ VkPipeline createPipeline(const VkDevice device, const VkPipelineLayout pipeline
     VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     colorBlendStateCreateInfo.attachmentCount                     = 1;
     colorBlendStateCreateInfo.pAttachments                        = &colorBlendAttachmentState;
-    pipelineCreateInfo.pColorBlendState                           = &colorBlendStateCreateInfo;
+    createInfo.pColorBlendState                                   = &colorBlendStateCreateInfo;
 
     VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
     VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     dynamicStateCreateInfo.dynamicStateCount                = ARRAYSIZE(dynamicStates);
     dynamicStateCreateInfo.pDynamicStates                   = dynamicStates;
-    pipelineCreateInfo.pDynamicState                        = &dynamicStateCreateInfo;
+    createInfo.pDynamicState                                = &dynamicStateCreateInfo;
 
-    pipelineCreateInfo.layout     = pipelineLayout;
-    pipelineCreateInfo.renderPass = renderPass;
+    createInfo.layout     = pipelineLayout;
+    createInfo.renderPass = renderPass;
 
     VkPipeline pipeline = 0;
-    VK_CHECK(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipeline));
+    VK_CHECK(vkCreateGraphicsPipelines(device, pipelineCache, 1, &createInfo, nullptr, &pipeline));
+
+    return pipeline;
+}
+
+VkPipeline createRayTracePipeline(const VkDevice device, const VkPipelineLayout pipelineLayout, const VkShaderModule raygenShaderModule,
+                                  const VkShaderModule closestHitShaderModule, const VkShaderModule missShaderModule, const VkPipelineCache pipelineCache) {
+    std::vector<VkPipelineShaderStageCreateInfo> shaderStagesCreateInfos(3, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO});
+    shaderStagesCreateInfos[INDEX_RAYGEN].stage  = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+    shaderStagesCreateInfos[INDEX_RAYGEN].module = raygenShaderModule;
+    shaderStagesCreateInfos[INDEX_RAYGEN].pName  = "main";
+
+    shaderStagesCreateInfos[INDEX_CLOSEST_HIT].stage  = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+    shaderStagesCreateInfos[INDEX_CLOSEST_HIT].module = closestHitShaderModule;
+    shaderStagesCreateInfos[INDEX_CLOSEST_HIT].pName  = "main";
+
+    shaderStagesCreateInfos[INDEX_MISS].stage  = VK_SHADER_STAGE_MISS_BIT_KHR;
+    shaderStagesCreateInfos[INDEX_MISS].module = missShaderModule;
+    shaderStagesCreateInfos[INDEX_MISS].pName  = "main";
+
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> rayTracingShaderGroupCreateInfos(3, {VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR});
+    for (VkRayTracingShaderGroupCreateInfoKHR& rayTracingShaderGroupCreateInfo : rayTracingShaderGroupCreateInfos) {
+        rayTracingShaderGroupCreateInfo.generalShader      = VK_SHADER_UNUSED_KHR;
+        rayTracingShaderGroupCreateInfo.closestHitShader   = VK_SHADER_UNUSED_KHR;
+        rayTracingShaderGroupCreateInfo.anyHitShader       = VK_SHADER_UNUSED_KHR;
+        rayTracingShaderGroupCreateInfo.intersectionShader = VK_SHADER_UNUSED_KHR;
+    }
+
+    rayTracingShaderGroupCreateInfos[INDEX_RAYGEN].type                  = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+    rayTracingShaderGroupCreateInfos[INDEX_RAYGEN].generalShader         = INDEX_RAYGEN;
+    rayTracingShaderGroupCreateInfos[INDEX_CLOSEST_HIT].type             = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+    rayTracingShaderGroupCreateInfos[INDEX_CLOSEST_HIT].closestHitShader = INDEX_CLOSEST_HIT;
+    rayTracingShaderGroupCreateInfos[INDEX_MISS].type                    = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+    rayTracingShaderGroupCreateInfos[INDEX_MISS].generalShader           = INDEX_MISS;
+
+    VkRayTracingPipelineCreateInfoKHR createInfo = {VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR};
+    createInfo.stageCount                        = static_cast<uint32_t>(shaderStagesCreateInfos.size());
+    createInfo.pStages                           = shaderStagesCreateInfos.data();
+    createInfo.groupCount                        = static_cast<uint32_t>(rayTracingShaderGroupCreateInfos.size());
+    createInfo.pGroups                           = rayTracingShaderGroupCreateInfos.data();
+    createInfo.maxRecursionDepth                 = 1;
+    createInfo.layout                            = pipelineLayout;
+
+    VkPipeline pipeline = 0;
+    VK_CHECK(vkCreateRayTracingPipelinesKHR(device, pipelineCache, 1, &createInfo, nullptr, &pipeline));
 
     return pipeline;
 }
 
 void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass renderPass, const VkFramebuffer& framebuffer, const VkExtent2D renderArea,
-                         const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet, const PushData& pushData,
+                         const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet, const RasterPushData& pushData,
                          uint32_t indexCount) {
     VkCommandBufferBeginInfo commandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
@@ -407,7 +450,7 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     renderPassBeginInfo.framebuffer     = framebuffer;
     vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushData), &pushData);
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RasterPushData), &pushData);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
@@ -419,7 +462,7 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
 
-void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushData, const uint32_t frameTime) {
+void updateCameraAndPushData(GLFWwindow* window, Camera& camera, RasterPushData& rasterPushData, const uint32_t frameTime) {
     double mouseXInput;
     double mouseYInput;
 
@@ -493,9 +536,9 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushD
 
     camera.position += offset;
 
-    pushData.cameraTransformation = glm::transpose(glm::translate(glm::identity<glm::mat4>(), -camera.position));
-    pushData.cameraTransformation = glm::rotate(pushData.cameraTransformation, static_cast<float>(camera.orientation.x), globalUp);
-    pushData.cameraTransformation = glm::rotate(pushData.cameraTransformation, static_cast<float>(camera.orientation.y), globalRight);
+    rasterPushData.cameraTransformation = glm::transpose(glm::translate(glm::identity<glm::mat4>(), -camera.position));
+    rasterPushData.cameraTransformation = glm::rotate(rasterPushData.cameraTransformation, static_cast<float>(camera.orientation.x), globalUp);
+    rasterPushData.cameraTransformation = glm::rotate(rasterPushData.cameraTransformation, static_cast<float>(camera.orientation.y), globalRight);
 }
 
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,
@@ -840,27 +883,20 @@ int main(int argc, char* argv[]) {
     VkPipelineCache pipelineCache = 0;
     VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
 
-    AccelerationStructure bottomLevelAccelerationStructure = createBottomAccelerationStructure(
-        device, static_cast<uint32_t>(cubeVertices.size()), static_cast<uint32_t>(cubeIndices.size() / 3), vertexBuffer.deviceAddress,
-        indexBuffer.deviceAddress, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
-
-    AccelerationStructure topLevelAccelerationStructure =
-        createTopAccelerationStructure(device, bottomLevelAccelerationStructure, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
-
-    VkPushConstantRange pushConstantRange;
-    pushConstantRange.offset     = 0;
-    pushConstantRange.size       = sizeof(PushData);
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
     std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings(3);
+    // Vertex buffer
     descriptorSetLayoutBindings[0].binding         = 0;
     descriptorSetLayoutBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     descriptorSetLayoutBindings[0].descriptorCount = 1;
     descriptorSetLayoutBindings[0].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+    // Index buffer
     descriptorSetLayoutBindings[1].binding         = 1;
     descriptorSetLayoutBindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     descriptorSetLayoutBindings[1].descriptorCount = 1;
     descriptorSetLayoutBindings[1].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+    // Acceleration structure
     descriptorSetLayoutBindings[2].binding         = 2;
     descriptorSetLayoutBindings[2].descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
     descriptorSetLayoutBindings[2].descriptorCount = 1;
@@ -873,22 +909,58 @@ int main(int argc, char* argv[]) {
     VkDescriptorSetLayout descriptorSetLayout = 0;
     VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout));
 
-    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pipelineLayoutCreateInfo.pushConstantRangeCount     = 1;
-    pipelineLayoutCreateInfo.pPushConstantRanges        = &pushConstantRange;
-    pipelineLayoutCreateInfo.setLayoutCount             = 1;
-    pipelineLayoutCreateInfo.pSetLayouts                = &descriptorSetLayout;
+    VkPushConstantRange rasterPushConstantRange = {};
+    rasterPushConstantRange.offset              = 0;
+    rasterPushConstantRange.size                = sizeof(RasterPushData);
+    rasterPushConstantRange.stageFlags          = VK_SHADER_STAGE_VERTEX_BIT;
 
-    VkPipelineLayout pipelineLayout = 0;
-    VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
+    VkPipelineLayoutCreateInfo rasterPipelineLayoutCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    rasterPipelineLayoutCreateInfo.pushConstantRangeCount     = 1;
+    rasterPipelineLayoutCreateInfo.pPushConstantRanges        = &rasterPushConstantRange;
+    rasterPipelineLayoutCreateInfo.setLayoutCount             = 1;
+    rasterPipelineLayoutCreateInfo.pSetLayouts                = &descriptorSetLayout;
+
+    VkPipelineLayout rasterPipelineLayout = 0;
+    VK_CHECK(vkCreatePipelineLayout(device, &rasterPipelineLayoutCreateInfo, nullptr, &rasterPipelineLayout));
 
     VkShaderModule vertexShader   = loadShader(device, "src/shaders/spirv/vertexShader.spv");
     VkShaderModule fragmentShader = loadShader(device, "src/shaders/spirv/fragmentShader.spv");
 
-    VkPipeline pipeline = createPipeline(device, pipelineLayout, vertexShader, fragmentShader, renderPass, pipelineCache);
+    VkPipeline rasterPipeline = createRasterPipeline(device, rasterPipelineLayout, vertexShader, fragmentShader, renderPass, pipelineCache);
 
     vkDestroyShaderModule(device, fragmentShader, nullptr);
     vkDestroyShaderModule(device, vertexShader, nullptr);
+
+    AccelerationStructure bottomLevelAccelerationStructure = createBottomAccelerationStructure(
+        device, static_cast<uint32_t>(cubeVertices.size()), static_cast<uint32_t>(cubeIndices.size() / 3), vertexBuffer.deviceAddress,
+        indexBuffer.deviceAddress, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
+
+    AccelerationStructure topLevelAccelerationStructure =
+        createTopAccelerationStructure(device, bottomLevelAccelerationStructure, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
+
+    VkPushConstantRange rayTracePushConstantRange = {};
+    rayTracePushConstantRange.offset              = 0;
+    rayTracePushConstantRange.size                = sizeof(RayTracePushData);
+    rayTracePushConstantRange.stageFlags          = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+    VkPipelineLayoutCreateInfo rayTracePipelineLayoutCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    rayTracePipelineLayoutCreateInfo.pushConstantRangeCount     = 1;
+    rayTracePipelineLayoutCreateInfo.pPushConstantRanges        = &rayTracePushConstantRange;
+    rayTracePipelineLayoutCreateInfo.setLayoutCount             = 1;
+    rayTracePipelineLayoutCreateInfo.pSetLayouts                = &descriptorSetLayout;
+
+    VkPipelineLayout rayTracePipelineLayout = 0;
+    VK_CHECK(vkCreatePipelineLayout(device, &rayTracePipelineLayoutCreateInfo, nullptr, &rayTracePipelineLayout));
+
+    VkShaderModule raygenShader     = loadShader(device, "src/shaders/spirv/raygenShader.spv");
+    VkShaderModule closestHitShader = loadShader(device, "src/shaders/spirv/closestHitShader.spv");
+    VkShaderModule missShader       = loadShader(device, "src/shaders/spirv/missShader.spv");
+
+    VkPipeline rayTracePipeline = createRayTracePipeline(device, rayTracePipelineLayout, raygenShader, closestHitShader, missShader, pipelineCache);
+
+    vkDestroyShaderModule(device, missShader, nullptr);
+    vkDestroyShaderModule(device, closestHitShader, nullptr);
+    vkDestroyShaderModule(device, raygenShader, nullptr);
 
     // clang-format off
     std::vector<VkDescriptorPoolSize> descriptorPoolSizes = {
@@ -978,7 +1050,7 @@ int main(int argc, char* argv[]) {
     camera.orientation = glm::vec2(0.0f, 0.0f);
     camera.position    = glm::vec3(0.0f, 0.0f, 2.5f);
 
-    PushData pushData            = {};
+    RasterPushData pushData      = {};
     pushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
     pushData.oneOverAspectRatio  = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
     pushData.near                = NEAR;
@@ -1026,8 +1098,8 @@ int main(int argc, char* argv[]) {
 
         updateCameraAndPushData(window, camera, pushData, frameTime);
 
-        recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, pipeline, pipelineLayout, descriptorSet, pushData,
-                            static_cast<uint32_t>(cubeIndices.size()));
+        recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, rasterPipeline, rasterPipelineLayout,
+                            descriptorSet, pushData, static_cast<uint32_t>(cubeIndices.size()));
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -1086,14 +1158,17 @@ int main(int argc, char* argv[]) {
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
+    vkDestroyPipeline(device, rayTracePipeline, nullptr);
+    vkDestroyPipelineLayout(device, rayTracePipelineLayout, nullptr);
+
     vkFreeMemory(device, topLevelAccelerationStructure.memory, nullptr);
     vkDestroyAccelerationStructureKHR(device, topLevelAccelerationStructure.accelerationStructure, nullptr);
 
     vkFreeMemory(device, bottomLevelAccelerationStructure.memory, nullptr);
     vkDestroyAccelerationStructureKHR(device, bottomLevelAccelerationStructure.accelerationStructure, nullptr);
 
-    vkDestroyPipeline(device, pipeline, nullptr);
-    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    vkDestroyPipeline(device, rasterPipeline, nullptr);
+    vkDestroyPipelineLayout(device, rasterPipelineLayout, nullptr);
     vkDestroyPipelineCache(device, pipelineCache, nullptr);
 
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
