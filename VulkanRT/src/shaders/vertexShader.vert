@@ -1,7 +1,7 @@
 #version 450
 
-#extension GL_GOOGLE_include_directive: require
-#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_scalar_block_layout  : require
 #extension GL_EXT_shader_16bit_storage : require
 
 #include "sharedStructures.h"
@@ -17,7 +17,7 @@ layout(set = 0, binding = 1) readonly buffer Indices {
 layout(location = 0) out vec3 fragColor;
 
 layout(push_constant) uniform PushConstants {
-	PushData pd;
+	RasterPushData pd;
 } pc;
 
 vec3 colors[3] = vec3[](

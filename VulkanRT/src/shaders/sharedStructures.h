@@ -1,5 +1,7 @@
 #ifdef CPP_SHADER_STRUCTURE
 #pragma warning(push, 0)
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_XYZW_ONLY
 #include "glm/fwd.hpp"
 #include "glm/mat4x4.hpp"
 #pragma warning(pop)
@@ -7,7 +9,7 @@
 #define mat4 glm::mat4
 #endif
 
-struct PushData {
+struct RasterPushData {
     // Camera transformation
     mat4 cameraTransformation;
 
@@ -15,6 +17,16 @@ struct PushData {
     float oneOverTanOfHalfFov;
     float oneOverAspectRatio;
     float near;
+};
+
+struct RayTracePushData {
+    // Camera transformation
+    mat4 cameraTransformationInverse;
+
+    // Perspective parameters for reverse z
+    float tanOfHalfFov;
+    float aspectRatio;
+    float oneOverNear;
 };
 
 #ifdef CPP_SHADER_STRUCTURE

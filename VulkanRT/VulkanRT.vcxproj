@@ -35,6 +35,17 @@
     <ClInclude Include="src\shaders\sharedStructures.h" />
     <ClInclude Include="src\swapchain.h" />
   </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="src\shaders\closestHitShader.rchit">
+      <FileType>Document</FileType>
+    </CustomBuild>
+    <CustomBuild Include="src\shaders\missShader.rmiss">
+      <FileType>Document</FileType>
+    </CustomBuild>
+    <CustomBuild Include="src\shaders\raygenShader.rgen">
+      <FileType>Document</FileType>
+    </CustomBuild>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <ProjectGuid>{C806B7CD-1C8E-455C-B345-111BB461E2EF}</ProjectGuid>

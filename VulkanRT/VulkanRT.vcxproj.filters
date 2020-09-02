@@ -41,6 +41,15 @@
     <CustomBuild Include="src\Shaders\vertexShader.vert">
       <Filter>Shaders</Filter>
     </CustomBuild>
+    <CustomBuild Include="src\shaders\raygenShader.rgen">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="src\shaders\missShader.rmiss">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="src\shaders\closestHitShader.rchit">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\common.h">
