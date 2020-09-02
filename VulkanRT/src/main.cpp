@@ -454,10 +454,6 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushD
     glm::vec3 forward = glm::rotate(globalForward, camera.orientation.x, globalUp);
     glm::vec3 right   = glm::rotate(globalRight, camera.orientation.x, globalUp);
 
-    pushData.rotation = glm::identity<glm::mat4>();
-    pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.orientation.x), globalUp);
-    pushData.rotation = glm::rotate(pushData.rotation, static_cast<float>(camera.orientation.y), globalRight);
-
     glm::vec3 deltaPosition = glm::vec3();
 
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
@@ -497,7 +493,9 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, PushData& pushD
 
     camera.position += offset;
 
-    pushData.position = camera.position;
+    pushData.cameraTransformation = glm::transpose(glm::translate(glm::identity<glm::mat4>(), -camera.position));
+    pushData.cameraTransformation = glm::rotate(pushData.cameraTransformation, static_cast<float>(camera.orientation.x), globalUp);
+    pushData.cameraTransformation = glm::rotate(pushData.cameraTransformation, static_cast<float>(camera.orientation.y), globalRight);
 }
 
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,

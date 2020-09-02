@@ -35,7 +35,7 @@ void main() {
                        vertices[indices.y],
                        vertices[indices.z]);
 
-    gl_Position = vec4(vertex - pc.pd.position, 1.0) * pc.pd.rotation;
+    gl_Position = vec4(vertex, 1.0) * pc.pd.cameraTransformation;
 
     gl_Position.x *= pc.pd.oneOverTanOfHalfFov * pc.pd.oneOverAspectRatio;
     gl_Position.y *= pc.pd.oneOverTanOfHalfFov;

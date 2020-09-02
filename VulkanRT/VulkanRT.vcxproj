@@ -28,11 +28,11 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="sharedStructures.h" />
     <ClInclude Include="src\commandPools.h" />
     <ClInclude Include="src\common.h" />
     <ClInclude Include="src\rayTracing.h" />
     <ClInclude Include="src\resources.h" />
+    <ClInclude Include="src\shaders\sharedStructures.h" />
     <ClInclude Include="src\swapchain.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

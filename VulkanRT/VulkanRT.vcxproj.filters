@@ -43,9 +43,6 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="sharedStructures.h">
-      <Filter>Shaders</Filter>
-    </ClInclude>
     <ClInclude Include="src\common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -60,6 +57,9 @@
     </ClInclude>
     <ClInclude Include="src\commandPools.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\shaders\sharedStructures.h">
+      <Filter>Shaders</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
