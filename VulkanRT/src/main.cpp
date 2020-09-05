@@ -401,6 +401,8 @@ VkPipeline createRayTracePipeline(const VkDevice device, const VkPipelineLayout 
     rayTracingShaderGroupCreateInfos[INDEX_MISS].type                    = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
     rayTracingShaderGroupCreateInfos[INDEX_MISS].generalShader           = INDEX_MISS;
 
+    VkPipelineLibraryCreateInfoKHR libraryCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR};
+
     VkRayTracingPipelineCreateInfoKHR createInfo = {VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR};
     createInfo.stageCount                        = static_cast<uint32_t>(shaderStagesCreateInfos.size());
     createInfo.pStages                           = shaderStagesCreateInfos.data();
@@ -408,6 +410,7 @@ VkPipeline createRayTracePipeline(const VkDevice device, const VkPipelineLayout 
     createInfo.pGroups                           = rayTracingShaderGroupCreateInfos.data();
     createInfo.maxRecursionDepth                 = 1;
     createInfo.layout                            = pipelineLayout;
+    createInfo.libraries                         = libraryCreateInfo;
 
     VkPipeline pipeline = 0;
     VK_CHECK(vkCreateRayTracingPipelinesKHR(device, pipelineCache, 1, &createInfo, nullptr, &pipeline));
