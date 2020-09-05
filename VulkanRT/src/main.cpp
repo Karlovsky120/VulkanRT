@@ -547,7 +547,7 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, RasterPushData&
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,
                                       VkSwapchainKHR& swapchain, std::vector<VkImageView>& swapchainImageViews, VkImageView& depthImageView,
                                       VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkRenderPass& renderPass, std::vector<VkFramebuffer>& framebuffers,
-                                      VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
+                                      VkImageView& rayTracingImageView, VkImage& rayTracingImage, VkDeviceMemory& rayTracingImageMemory, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
                                       const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat,
                                       const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex,
                                       float& oneOverAspectRatio) {
@@ -575,6 +575,10 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
         vkDestroyImageView(device, imageView, nullptr);
     }
 
+    vkDestroyImageView(device, rayTracingImageView, nullptr);
+    vkFreeMemory(device, rayTracingImageMemory, nullptr);
+    vkDestroyImage(device, rayTracingImage, nullptr);
+
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
     surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
 
@@ -596,6 +600,14 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 
     renderPass   = createRenderPass(device, surfaceFormat.format);
     framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
+
+    rayTracingImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_STORAGE_BIT, VK_FORMAT_B8G8R8A8_UNORM);
+    VkMemoryRequirements rayTracingImageMemoryRequirements;
+    vkGetImageMemoryRequirements(device, rayTracingImage, &rayTracingImageMemoryRequirements);
+    rayTracingImageMemory =
+        allocateVulkanObjectMemory(device, rayTracingImageMemoryRequirements, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkBindImageMemory(device, rayTracingImage, rayTracingImageMemory, 0);
+    rayTracingImageView = createImageView(device, rayTracingImage, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 int main(int, char*[]) {
@@ -1145,7 +1157,8 @@ int main(int, char*[]) {
         VkResult acquireResult = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
-                                             depthImageMemory, renderPass, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties,
+                                             depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage,
+                                             rayTracingImageMemory, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties,
                                              surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, pushData.oneOverAspectRatio);
 
             continue;
@@ -1202,7 +1215,8 @@ int main(int, char*[]) {
         VkResult presentResult = vkQueuePresentKHR(queue, &presentInfo);
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
-                                             depthImageMemory, renderPass, framebuffers, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties,
+                                             depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage,
+                                             rayTracingImageMemory, surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties,
                                              surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, pushData.oneOverAspectRatio);
 
             continue;
