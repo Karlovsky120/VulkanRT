@@ -23,15 +23,13 @@ void main() {
 	vec4 origin = pc.pd.cameraTransformationInverse * vec4(0,0,0,1);
 	vec4 target = vec4(d.x * pc.pd.tanOfHalfFov * pc.pd.aspectRatio,
                        d.y * pc.pd.tanOfHalfFov,
-                       1,
-                       pc.pd.oneOverNear);
+                       pc.pd.oneOverNear,
+                       -1);
     
 	vec4 direction = pc.pd.cameraTransformationInverse * vec4(normalize(target.xyz), 0);
 
 	float tmin = 0.001;
 	float tmax = 1000.0;
-
-    hitValue = vec3(0.0);
 
     traceRayEXT(
         accelerationStructure,

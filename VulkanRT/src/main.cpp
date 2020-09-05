@@ -420,12 +420,12 @@ VkPipeline createRayTracePipeline(const VkDevice device, const VkPipelineLayout 
 
 VkImageMemoryBarrier createImageMemoryBarrier(const VkImage image, const VkImageLayout oldLayout, const VkImageLayout newLayout) {
     VkImageMemoryBarrier barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.oldLayout           = oldLayout;
-    barrier.newLayout           = newLayout;
-    barrier.image               = image;
-    barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcQueueFamilyIndex  = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex  = VK_QUEUE_FAMILY_IGNORED;
+    barrier.oldLayout            = oldLayout;
+    barrier.newLayout            = newLayout;
+    barrier.image                = image;
+    barrier.subresourceRange     = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
     switch (oldLayout) {
     case VK_IMAGE_LAYOUT_UNDEFINED:
@@ -466,9 +466,9 @@ VkImageMemoryBarrier createImageMemoryBarrier(const VkImage image, const VkImage
     return barrier;
 }
 
-void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass renderPass, const VkFramebuffer& framebuffer, const VkExtent2D renderArea,
-                         const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet, const RasterPushData& pushData,
-                         uint32_t indexCount) {
+void recordRasterCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass renderPass, const VkFramebuffer& framebuffer,
+                               const VkExtent2D renderArea, const VkPipeline pipeline, const VkPipelineLayout pipelineLayout,
+                               const VkDescriptorSet descriptorSet, const RasterPushData& rasterPushData, uint32_t indexCount) {
     VkCommandBufferBeginInfo commandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
     VkViewport viewport = {};
@@ -501,7 +501,7 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     renderPassBeginInfo.framebuffer     = framebuffer;
     vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RasterPushData), &pushData);
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RasterPushData), &rasterPushData);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
@@ -513,8 +513,59 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
 
-void updateCameraAndPushData(GLFWwindow* window, Camera& camera, RasterPushData& rasterPushData,
-                             RayTracePushData rayTracePushData, const uint32_t frameTime) {
+void recordRayTracingCommandBuffer(const VkCommandBuffer commandBuffer, const VkExtent2D renderArea, const VkPipeline pipeline,
+                                   const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet, const VkImage swapchainImage,
+                                   const VkImage rayTracingImage, const VkStridedBufferRegionKHR* pRaygenStridedBufferRegion,
+                                   const VkStridedBufferRegionKHR* pClosestHitStridedBufferRegion, const VkStridedBufferRegionKHR* pMissStridedBufferRegion,
+                                   const VkStridedBufferRegionKHR* pCallableBufferRegion, const RayTracePushData& rayTracePushData) {
+    VkCommandBufferBeginInfo commandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
+
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RayTracePushData), &rayTracePushData);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+
+    vkCmdTraceRaysKHR(commandBuffer, pRaygenStridedBufferRegion, pMissStridedBufferRegion, pClosestHitStridedBufferRegion, pCallableBufferRegion,
+                      renderArea.width, renderArea.height, 1);
+
+    VkImageMemoryBarrier undefinedToTransferDst = createImageMemoryBarrier(swapchainImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &undefinedToTransferDst);
+
+    VkImageSubresourceLayers imageSubresourceLayers = {};
+    imageSubresourceLayers.aspectMask               = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageSubresourceLayers.mipLevel                 = 0;
+    imageSubresourceLayers.baseArrayLayer           = 0;
+    imageSubresourceLayers.layerCount               = 1;
+
+    VkImageCopy imageCopy    = {};
+    imageCopy.srcSubresource = imageSubresourceLayers;
+    imageCopy.srcOffset      = {0, 0, 0};
+    imageCopy.dstSubresource = imageSubresourceLayers;
+    imageCopy.dstOffset      = {0, 0, 0};
+    imageCopy.extent         = {renderArea.width, renderArea.height, 1};
+
+    VkImageMemoryBarrier generalToTransferSrc = createImageMemoryBarrier(rayTracingImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &generalToTransferSrc);
+
+    vkCmdCopyImage(commandBuffer, rayTracingImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageCopy);
+
+    VkImageMemoryBarrier transferSrcToGeneral = createImageMemoryBarrier(rayTracingImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &transferSrcToGeneral);
+
+    VkImageMemoryBarrier transferDstToPresent = createImageMemoryBarrier(swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &transferDstToPresent);
+
+    VK_CHECK(vkEndCommandBuffer(commandBuffer));
+}
+
+void updateCameraAndPushData(GLFWwindow* window, Camera& camera, bool& rayTrace, RasterPushData& rasterPushData, RayTracePushData rayTracePushData,
+                             const uint32_t frameTime) {
     double mouseXInput;
     double mouseYInput;
 
@@ -593,15 +644,20 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, RasterPushData&
     rasterPushData.cameraTransformation = glm::rotate(rasterPushData.cameraTransformation, static_cast<float>(camera.orientation.y), globalRight);
 
     rayTracePushData.cameraTransformationInverse = glm::inverse(rasterPushData.cameraTransformation);
+
+    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
+        rayTrace = !rayTrace;
+    }
 }
 
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,
-                                      VkSwapchainKHR& swapchain, std::vector<VkImageView>& swapchainImageViews, VkImageView& depthImageView,
-                                      VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkRenderPass& renderPass, std::vector<VkFramebuffer>& framebuffers,
-                                      VkImageView& rayTracingImageView, VkImage& rayTracingImage, VkDeviceMemory& rayTracingImageMemory,
-                                      VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
+                                      VkSwapchainKHR& swapchain, std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
+                                      VkImageView& depthImageView, VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkRenderPass& renderPass,
+                                      std::vector<VkFramebuffer>& framebuffers, VkImageView& rayTracingImageView, VkImage& rayTracingImage,
+                                      VkDeviceMemory& rayTracingImageMemory, const VkDescriptorSet descriptorSet, const VkCommandPool commandPool,
+                                      const VkQueue queue, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
                                       const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat,
-                                      const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex,
+                                      const VkPresentModeKHR presentMode, uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex,
                                       float& oneOverAspectRatio, float& aspectRatio) {
 
     int width  = 0;
@@ -642,6 +698,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     vkDestroySwapchainKHR(device, swapchain, nullptr);
     swapchain = newSwapchain;
 
+    vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data());
     swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
 
     depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D32_SFLOAT_S8_UINT);
@@ -654,13 +711,52 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     renderPass   = createRenderPass(device, surfaceFormat.format);
     framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 
-    rayTracingImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_STORAGE_BIT, VK_FORMAT_B8G8R8A8_UNORM);
+    rayTracingImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_FORMAT_B8G8R8A8_UNORM);
     VkMemoryRequirements rayTracingImageMemoryRequirements;
     vkGetImageMemoryRequirements(device, rayTracingImage, &rayTracingImageMemoryRequirements);
     rayTracingImageMemory =
         allocateVulkanObjectMemory(device, rayTracingImageMemoryRequirements, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     vkBindImageMemory(device, rayTracingImage, rayTracingImageMemory, 0);
     rayTracingImageView = createImageView(device, rayTracingImage, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    VkCommandBufferAllocateInfo layoutCommandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    layoutCommandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    layoutCommandBufferAllocateInfo.commandPool                 = commandPool;
+    layoutCommandBufferAllocateInfo.commandBufferCount          = 1;
+
+    VkCommandBuffer layoutCommandBuffer = 0;
+    vkAllocateCommandBuffers(device, &layoutCommandBufferAllocateInfo, &layoutCommandBuffer);
+
+    VkCommandBufferBeginInfo layoutCommandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    vkBeginCommandBuffer(layoutCommandBuffer, &layoutCommandBufferBeginInfo);
+
+    VkImageMemoryBarrier rayTracingImageUndefinedToGeneral = createImageMemoryBarrier(rayTracingImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    vkCmdPipelineBarrier(layoutCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &rayTracingImageUndefinedToGeneral);
+    vkEndCommandBuffer(layoutCommandBuffer);
+
+    VkSubmitInfo layoutBufferSubmitInfo       = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    layoutBufferSubmitInfo.commandBufferCount = 1;
+    layoutBufferSubmitInfo.pCommandBuffers    = &layoutCommandBuffer;
+
+    vkQueueSubmit(queue, 1, &layoutBufferSubmitInfo, nullptr);
+    vkDeviceWaitIdle(device);
+
+    vkFreeCommandBuffers(device, commandPool, 1, &layoutCommandBuffer);
+
+    VkDescriptorImageInfo descriptorImageInfo = {};
+    descriptorImageInfo.imageView             = rayTracingImageView;
+    descriptorImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet writeDescriptorSet = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    writeDescriptorSet.dstSet               = descriptorSet;
+    writeDescriptorSet.dstBinding           = 3;
+    writeDescriptorSet.dstArrayElement      = 0;
+    writeDescriptorSet.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writeDescriptorSet.descriptorCount      = 1;
+    writeDescriptorSet.pImageInfo           = &descriptorImageInfo;
+
+    vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 }
 
 int main(int, char*[]) {
@@ -1008,7 +1104,7 @@ int main(int, char*[]) {
     AccelerationStructure topLevelAccelerationStructure =
         createTopAccelerationStructure(device, bottomLevelAccelerationStructure, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
 
-    VkImage        rayTracingImage       = createImage(device, surfaceExtent, VK_IMAGE_USAGE_STORAGE_BIT, VK_FORMAT_B8G8R8A8_UNORM);
+    VkImage        rayTracingImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_FORMAT_B8G8R8A8_UNORM);
     VkDeviceMemory rayTracingImageMemory = 0;
     try {
         VkMemoryRequirements rayTracingImageMemoryRequirements;
@@ -1067,6 +1163,31 @@ int main(int, char*[]) {
     vkBindImageMemory(device, rayTracingImage, rayTracingImageMemory, 0);
 
     VkImageView rayTracingImageView = createImageView(device, rayTracingImage, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    VkCommandBufferAllocateInfo layoutCommandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    layoutCommandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    layoutCommandBufferAllocateInfo.commandPool                 = transferCommandPool;
+    layoutCommandBufferAllocateInfo.commandBufferCount          = 1;
+
+    VkCommandBuffer layoutCommandBuffer = 0;
+    vkAllocateCommandBuffers(device, &layoutCommandBufferAllocateInfo, &layoutCommandBuffer);
+
+    VkCommandBufferBeginInfo layoutCommandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    vkBeginCommandBuffer(layoutCommandBuffer, &layoutCommandBufferBeginInfo);
+
+    VkImageMemoryBarrier rayTracingImageUndefinedToGeneral = createImageMemoryBarrier(rayTracingImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    vkCmdPipelineBarrier(layoutCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &rayTracingImageUndefinedToGeneral);
+    vkEndCommandBuffer(layoutCommandBuffer);
+
+    VkSubmitInfo layoutBufferSubmitInfo       = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    layoutBufferSubmitInfo.commandBufferCount = 1;
+    layoutBufferSubmitInfo.pCommandBuffers    = &layoutCommandBuffer;
+
+    vkQueueSubmit(queue, 1, &layoutBufferSubmitInfo, nullptr);
+    vkDeviceWaitIdle(device);
+
+    vkFreeCommandBuffers(device, transferCommandPool, 1, &layoutCommandBuffer);
 
     VkPushConstantRange rayTracePushConstantRange = {};
     rayTracePushConstantRange.offset              = 0;
@@ -1156,55 +1277,72 @@ int main(int, char*[]) {
 
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
-    VkDeviceSize groupHandleSize        = physicalDeviceRayTracingProperties.shaderGroupHandleSize;
-    VkDeviceSize shaderBindingTableSize = groupHandleSize * 3; // Number of shader stages
+    const uint32_t shaderGroupCount = 3;
 
-    std::vector<uint8_t> handleData(shaderBindingTableSize);
-    vkGetRayTracingShaderGroupHandlesKHR(device, rayTracePipeline, 0, 3, shaderBindingTableSize, handleData.data());
+    const VkDeviceSize baseGroupAlignment    = physicalDeviceRayTracingProperties.shaderGroupBaseAlignment;
+    const VkDeviceSize shaderGroupHandleSize = physicalDeviceRayTracingProperties.shaderGroupHandleSize;
 
-    Buffer shaderBindingTableBuffer = createBuffer(
-        device, shaderBindingTableSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
-    uploadToDeviceLocalBuffer(device, handleData, stagingBuffer.buffer, stagingBuffer.memory, shaderBindingTableBuffer.buffer, transferCommandPool, queue);
+    const VkDeviceSize   shaderHandleStorageSize = shaderGroupHandleSize * shaderGroupCount;
+    std::vector<uint8_t> shaderHandleStorage(shaderHandleStorageSize);
+    vkGetRayTracingShaderGroupHandlesKHR(device, rayTracePipeline, 0, shaderGroupCount, shaderHandleStorageSize, shaderHandleStorage.data());
+    uint8_t* shaderHandlesStoragePosition = shaderHandleStorage.data();
 
-    vkDestroyCommandPool(device, transferCommandPool, nullptr);
+    const VkDeviceSize   alignedShaderHandlesSize = baseGroupAlignment * shaderGroupCount;
+    std::vector<uint8_t> alignedShaderHandles(alignedShaderHandlesSize);
+    uint8_t*             alignedShaderHandlesPosition = alignedShaderHandles.data();
+
+    for (size_t i = 0; i < 3; ++i) {
+        memcpy(alignedShaderHandlesPosition, shaderHandlesStoragePosition, shaderGroupHandleSize);
+        shaderHandlesStoragePosition += shaderGroupHandleSize;
+        alignedShaderHandlesPosition += baseGroupAlignment;
+    }
+
+    Buffer shaderBindingTableBuffer = createBuffer(device, alignedShaderHandlesSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR,
+                                                   physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    uploadToDeviceLocalBuffer(device, shaderHandleStorage, stagingBuffer.buffer, stagingBuffer.memory, shaderBindingTableBuffer.buffer, transferCommandPool,
+                              queue);
 
     vkFreeMemory(device, stagingBuffer.memory, nullptr);
     vkDestroyBuffer(device, stagingBuffer.buffer, nullptr);
 
     VkStridedBufferRegionKHR raygenStridedBufferRegion = {};
     raygenStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
-    raygenStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(groupHandleSize * INDEX_RAYGEN);
-    raygenStridedBufferRegion.size                     = groupHandleSize;
-    raygenStridedBufferRegion.stride                   = groupHandleSize;
+    raygenStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(baseGroupAlignment * INDEX_RAYGEN);
+    raygenStridedBufferRegion.size                     = shaderGroupHandleSize;
+    raygenStridedBufferRegion.stride                   = baseGroupAlignment;
 
     VkStridedBufferRegionKHR closestHitStridedBufferRegion = {};
     closestHitStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
-    closestHitStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(groupHandleSize * INDEX_CLOSEST_HIT);
-    closestHitStridedBufferRegion.size                     = groupHandleSize;
-    closestHitStridedBufferRegion.stride                   = groupHandleSize;
+    closestHitStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(baseGroupAlignment * INDEX_CLOSEST_HIT);
+    closestHitStridedBufferRegion.size                     = shaderGroupHandleSize;
+    closestHitStridedBufferRegion.stride                   = baseGroupAlignment;
 
     VkStridedBufferRegionKHR missStridedBufferRegion = {};
     missStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
-    missStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(groupHandleSize * INDEX_MISS);
-    missStridedBufferRegion.size                     = groupHandleSize;
-    missStridedBufferRegion.stride                   = groupHandleSize;
+    missStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(baseGroupAlignment * INDEX_MISS);
+    missStridedBufferRegion.size                     = shaderGroupHandleSize;
+    missStridedBufferRegion.stride                   = baseGroupAlignment;
+
+    VkStridedBufferRegionKHR callableStridedBufferRegion = {};
 
     VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
     commandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
 
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    commandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    commandBufferAllocateInfo.commandBufferCount          = 1;
+    layoutCommandBufferAllocateInfo.level                 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    layoutCommandBufferAllocateInfo.commandBufferCount    = 1;
 
     std::vector<VkCommandPool>   commandPools(swapchainImageCount);
     std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
     for (size_t i = 0; i < swapchainImageCount; ++i) {
         VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPools[i]));
-        commandBufferAllocateInfo.commandPool = commandPools[i];
-        VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffers[i]));
+        layoutCommandBufferAllocateInfo.commandPool = commandPools[i];
+        VK_CHECK(vkAllocateCommandBuffers(device, &layoutCommandBufferAllocateInfo, &commandBuffers[i]));
     }
+
+    std::vector<VkImage> swapchainImages(swapchainImageCount);
+    vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data());
 
     std::vector<VkSemaphore> imageAvailableSemaphores(MAX_FRAMES_IN_FLIGHT);
     std::vector<VkSemaphore> renderFinishedSemaphores(MAX_FRAMES_IN_FLIGHT);
@@ -1236,6 +1374,7 @@ int main(int, char*[]) {
     rayTracePushData.oneOverNear      = 1.0f / NEAR;
 
     uint32_t currentFrame = 0;
+    bool     rayTrace     = true;
 
     std::chrono::high_resolution_clock::time_point oldTime = std::chrono::high_resolution_clock::now();
     uint32_t                                       time    = 0;
@@ -1248,10 +1387,11 @@ int main(int, char*[]) {
         uint32_t imageIndex;
         VkResult acquireResult = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
-            updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
-                                             depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage, rayTracingImageMemory,
-                                             surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode,
-                                             swapchainImageCount, graphicsQueueFamilyIndex, rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
+            updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImages, swapchainImageViews, depthImageView,
+                                             depthImage, depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage,
+                                             rayTracingImageMemory, descriptorSet, transferCommandPool, queue, surfaceCapabilities, surfaceExtent,
+                                             physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex,
+                                             rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
 
             continue;
         } else if (acquireResult != VK_SUBOPTIMAL_KHR) {
@@ -1277,12 +1417,20 @@ int main(int, char*[]) {
             time = 0;
         }
 
-        updateCameraAndPushData(window, camera, rasterPushData, rayTracePushData, frameTime);
+        updateCameraAndPushData(window, camera, rayTrace, rasterPushData, rayTracePushData, frameTime);
 
-        recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, rasterPipeline, rasterPipelineLayout,
-                            descriptorSet, rasterPushData, static_cast<uint32_t>(cubeIndices.size()));
+        VkPipelineStageFlags waitStage;
 
-        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        if (rayTrace) {
+            recordRayTracingCommandBuffer(commandBuffers[imageIndex], surfaceExtent, rayTracePipeline, rayTracePipelineLayout, descriptorSet,
+                                          swapchainImages[imageIndex], rayTracingImage, &raygenStridedBufferRegion, &closestHitStridedBufferRegion,
+                                          &missStridedBufferRegion, &callableStridedBufferRegion, rayTracePushData);
+            waitStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        } else {
+            recordRasterCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, rasterPipeline, rasterPipelineLayout,
+                                      descriptorSet, rasterPushData, static_cast<uint32_t>(cubeIndices.size()));
+            waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        }
 
         VkSubmitInfo submitInfo         = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
         submitInfo.waitSemaphoreCount   = 1;
@@ -1306,10 +1454,11 @@ int main(int, char*[]) {
 
         VkResult presentResult = vkQueuePresentKHR(queue, &presentInfo);
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-            updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
-                                             depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage, rayTracingImageMemory,
-                                             surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode,
-                                             swapchainImageCount, graphicsQueueFamilyIndex, rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
+            updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImages, swapchainImageViews, depthImageView,
+                                             depthImage, depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage,
+                                             rayTracingImageMemory, descriptorSet, transferCommandPool, queue, surfaceCapabilities, surfaceExtent,
+                                             physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex,
+                                             rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
 
             continue;
         } else {
@@ -1337,6 +1486,8 @@ int main(int, char*[]) {
         vkFreeCommandBuffers(device, commandPools[i], 1, &commandBuffers[i]);
         vkDestroyCommandPool(device, commandPools[i], nullptr);
     }
+
+    vkDestroyCommandPool(device, transferCommandPool, nullptr);
 
     vkDestroyBuffer(device, shaderBindingTableBuffer.buffer, nullptr);
     vkFreeMemory(device, shaderBindingTableBuffer.memory, nullptr);
