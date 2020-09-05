@@ -595,8 +595,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
 }
 
-#pragma warning(suppress : 4100) // Unreferenced formal parameter (argv & argc)
-int main(int argc, char* argv[]) {
+int main(int, char*[]) {
 
     if (!glfwInit()) {
         printf("Failed to initialize GLFW!");
