@@ -889,11 +889,6 @@ int main(int, char*[]) {
 
     uploadToDeviceLocalBuffer(device, cubeIndices, stagingBuffer.buffer, stagingBuffer.memory, indexBuffer.buffer, transferCommandPool, queue);
 
-    vkDestroyCommandPool(device, transferCommandPool, nullptr);
-
-    vkFreeMemory(device, stagingBuffer.memory, nullptr);
-    vkDestroyBuffer(device, stagingBuffer.buffer, nullptr);
-
     VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
     pipelineCacheCreateInfo.initialDataSize           = 0;
 
@@ -1109,6 +1104,40 @@ int main(int, char*[]) {
 
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
+    VkDeviceSize groupHandleSize        = physicalDeviceRayTracingProperties.shaderGroupHandleSize;
+    VkDeviceSize shaderBindingTableSize = groupHandleSize * 3; // Number of shader stages
+
+    std::vector<uint8_t> handleData(shaderBindingTableSize);
+    vkGetRayTracingShaderGroupHandlesKHR(device, rayTracePipeline, 0, 3, shaderBindingTableSize, handleData.data());
+
+    Buffer shaderBindingTableBuffer = createBuffer(
+        device, shaderBindingTableSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+    uploadToDeviceLocalBuffer(device, handleData, stagingBuffer.buffer, stagingBuffer.memory, shaderBindingTableBuffer.buffer, transferCommandPool, queue);
+
+    vkDestroyCommandPool(device, transferCommandPool, nullptr);
+
+    vkFreeMemory(device, stagingBuffer.memory, nullptr);
+    vkDestroyBuffer(device, stagingBuffer.buffer, nullptr);
+
+    VkStridedBufferRegionKHR raygenStridedBufferRegion = {};
+    raygenStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
+    raygenStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(groupHandleSize * INDEX_RAYGEN);
+    raygenStridedBufferRegion.size                     = groupHandleSize;
+    raygenStridedBufferRegion.stride                   = groupHandleSize;
+
+    VkStridedBufferRegionKHR closestHitStridedBufferRegion = {};
+    closestHitStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
+    closestHitStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(groupHandleSize * INDEX_CLOSEST_HIT);
+    closestHitStridedBufferRegion.size                     = groupHandleSize;
+    closestHitStridedBufferRegion.stride                   = groupHandleSize;
+
+    VkStridedBufferRegionKHR missStridedBufferRegion = {};
+    missStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
+    missStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(groupHandleSize * INDEX_MISS);
+    missStridedBufferRegion.size                     = groupHandleSize;
+    missStridedBufferRegion.stride                   = groupHandleSize;
+
     VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
     commandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
@@ -1251,6 +1280,9 @@ int main(int, char*[]) {
         vkFreeCommandBuffers(device, commandPools[i], 1, &commandBuffers[i]);
         vkDestroyCommandPool(device, commandPools[i], nullptr);
     }
+
+    vkDestroyBuffer(device, shaderBindingTableBuffer.buffer, nullptr);
+    vkFreeMemory(device, shaderBindingTableBuffer.memory, nullptr);
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
