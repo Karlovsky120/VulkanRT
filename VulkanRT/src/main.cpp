@@ -418,6 +418,54 @@ VkPipeline createRayTracePipeline(const VkDevice device, const VkPipelineLayout 
     return pipeline;
 }
 
+VkImageMemoryBarrier createImageMemoryBarrier(const VkImage image, const VkImageLayout oldLayout, const VkImageLayout newLayout) {
+    VkImageMemoryBarrier barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.oldLayout           = oldLayout;
+    barrier.newLayout           = newLayout;
+    barrier.image               = image;
+    barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+    switch (oldLayout) {
+    case VK_IMAGE_LAYOUT_UNDEFINED:
+        barrier.srcAccessMask = 0;
+        break;
+    case VK_IMAGE_LAYOUT_GENERAL:
+        barrier.srcAccessMask = 0;
+        break;
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+    default:
+        assert(false);
+#pragma warning(suppress : 4061) // Not all enumerators handled in the switch of enum
+    }
+
+    switch (newLayout) {
+    case VK_IMAGE_LAYOUT_GENERAL:
+        barrier.srcAccessMask = 0;
+        break;
+    case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+        barrier.srcAccessMask = 0;
+        break;
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+    default:
+        assert(false);
+#pragma warning(suppress : 4061) // Not all enumerators handled in the switch of enum
+    }
+
+    return barrier;
+}
+
 void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass renderPass, const VkFramebuffer& framebuffer, const VkExtent2D renderArea,
                          const VkPipeline pipeline, const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet, const RasterPushData& pushData,
                          uint32_t indexCount) {
