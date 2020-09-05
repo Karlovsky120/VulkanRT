@@ -465,7 +465,8 @@ void recordCommandBuffer(const VkCommandBuffer commandBuffer, const VkRenderPass
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
 
-void updateCameraAndPushData(GLFWwindow* window, Camera& camera, RasterPushData& rasterPushData, const uint32_t frameTime) {
+void updateCameraAndPushData(GLFWwindow* window, Camera& camera, RasterPushData& rasterPushData,
+                             RayTracePushData rayTracePushData, const uint32_t frameTime) {
     double mouseXInput;
     double mouseYInput;
 
@@ -542,6 +543,8 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, RasterPushData&
     rasterPushData.cameraTransformation = glm::transpose(glm::translate(glm::identity<glm::mat4>(), -camera.position));
     rasterPushData.cameraTransformation = glm::rotate(rasterPushData.cameraTransformation, static_cast<float>(camera.orientation.x), globalUp);
     rasterPushData.cameraTransformation = glm::rotate(rasterPushData.cameraTransformation, static_cast<float>(camera.orientation.y), globalRight);
+
+    rayTracePushData.cameraTransformationInverse = glm::inverse(rasterPushData.cameraTransformation);
 }
 
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,
@@ -551,7 +554,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
                                       VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
                                       const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat,
                                       const VkPresentModeKHR presentMode, const uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex,
-                                      float& oneOverAspectRatio) {
+                                      float& oneOverAspectRatio, float& aspectRatio) {
 
     int width  = 0;
     int height = 0;
@@ -584,6 +587,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
 
     oneOverAspectRatio = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
+    aspectRatio        = static_cast<float>(surfaceExtent.width) / static_cast<float>(surfaceExtent.height);
 
     VkSwapchainKHR newSwapchain =
         createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent, swapchain);
@@ -1173,10 +1177,15 @@ int main(int, char*[]) {
     camera.orientation = glm::vec2(0.0f, 0.0f);
     camera.position    = glm::vec3(0.0f, 0.0f, 2.5f);
 
-    RasterPushData pushData      = {};
-    pushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
-    pushData.oneOverAspectRatio  = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
-    pushData.near                = NEAR;
+    RasterPushData rasterPushData      = {};
+    rasterPushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
+    rasterPushData.oneOverAspectRatio  = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
+    rasterPushData.near                = NEAR;
+
+    RayTracePushData rayTracePushData = {};
+    rayTracePushData.tanOfHalfFov     = tan(0.5f * FOV);
+    rayTracePushData.aspectRatio      = static_cast<float>(surfaceExtent.width) / static_cast<float>(surfaceExtent.height);
+    rayTracePushData.oneOverNear      = 1.0f / NEAR;
 
     uint32_t currentFrame = 0;
 
@@ -1194,7 +1203,7 @@ int main(int, char*[]) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
                                              depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage, rayTracingImageMemory,
                                              surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode,
-                                             swapchainImageCount, graphicsQueueFamilyIndex, pushData.oneOverAspectRatio);
+                                             swapchainImageCount, graphicsQueueFamilyIndex, rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
 
             continue;
         } else if (acquireResult != VK_SUBOPTIMAL_KHR) {
@@ -1220,10 +1229,10 @@ int main(int, char*[]) {
             time = 0;
         }
 
-        updateCameraAndPushData(window, camera, pushData, frameTime);
+        updateCameraAndPushData(window, camera, rasterPushData, rayTracePushData, frameTime);
 
         recordCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, rasterPipeline, rasterPipelineLayout,
-                            descriptorSet, pushData, static_cast<uint32_t>(cubeIndices.size()));
+                            descriptorSet, rasterPushData, static_cast<uint32_t>(cubeIndices.size()));
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -1252,7 +1261,7 @@ int main(int, char*[]) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImageViews, depthImageView, depthImage,
                                              depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage, rayTracingImageMemory,
                                              surfaceCapabilities, surfaceExtent, physicalDeviceMemoryProperties, surfaceFormat, presentMode,
-                                             swapchainImageCount, graphicsQueueFamilyIndex, pushData.oneOverAspectRatio);
+                                             swapchainImageCount, graphicsQueueFamilyIndex, rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
 
             continue;
         } else {
