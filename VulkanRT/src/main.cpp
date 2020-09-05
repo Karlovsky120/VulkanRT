@@ -780,11 +780,10 @@ int main(int, char*[]) {
     std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
     uint32_t                 swapchainImageCount = static_cast<uint32_t>(swapchainImageViews.size());
 
-    VkImage depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D32_SFLOAT_S8_UINT);
-
     VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalDeviceMemoryProperties);
 
+    VkImage        depthImage       = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D32_SFLOAT_S8_UINT);
     VkDeviceMemory depthImageMemory = 0;
     try {
         VkMemoryRequirements depthImageMemoryRequirements;
@@ -801,7 +800,6 @@ int main(int, char*[]) {
         }
 
         vkDestroySwapchainKHR(device, swapchain, nullptr);
-        vkDestroyImage(device, depthImage, nullptr);
         vkDestroyDevice(device, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
 
@@ -817,8 +815,7 @@ int main(int, char*[]) {
 
     vkBindImageMemory(device, depthImage, depthImageMemory, 0);
 
-    VkImageView depthImageView = 0;
-    depthImageView             = createImageView(device, depthImage, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    VkImageView depthImageView = createImageView(device, depthImage, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
     VkRenderPass renderPass = createRenderPass(device, surfaceFormat.format);
 
@@ -882,7 +879,7 @@ int main(int, char*[]) {
     VkPipelineCache pipelineCache = 0;
     VK_CHECK(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
 
-    std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings(3);
+    std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings(4);
     // Vertex buffer
     descriptorSetLayoutBindings[0].binding         = 0;
     descriptorSetLayoutBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -900,6 +897,12 @@ int main(int, char*[]) {
     descriptorSetLayoutBindings[2].descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
     descriptorSetLayoutBindings[2].descriptorCount = 1;
     descriptorSetLayoutBindings[2].stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+    // Ray tracing image
+    descriptorSetLayoutBindings[3].binding         = 3;
+    descriptorSetLayoutBindings[3].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    descriptorSetLayoutBindings[3].descriptorCount = 1;
+    descriptorSetLayoutBindings[3].stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     descriptorSetLayoutCreateInfo.bindingCount                    = static_cast<uint32_t>(descriptorSetLayoutBindings.size());
@@ -936,6 +939,66 @@ int main(int, char*[]) {
 
     AccelerationStructure topLevelAccelerationStructure =
         createTopAccelerationStructure(device, bottomLevelAccelerationStructure, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
+
+    VkImage        rayTracingImage       = createImage(device, surfaceExtent, VK_IMAGE_USAGE_STORAGE_BIT, VK_FORMAT_B8G8R8A8_UNORM);
+    VkDeviceMemory rayTracingImageMemory = 0;
+    try {
+        VkMemoryRequirements rayTracingImageMemoryRequirements;
+        vkGetImageMemoryRequirements(device, rayTracingImage, &rayTracingImageMemoryRequirements);
+        rayTracingImageMemory =
+            allocateVulkanObjectMemory(device, rayTracingImageMemoryRequirements, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    } catch (std::runtime_error& e) {
+        printf("%s", e.what());
+
+        vkDestroyImage(device, rayTracingImage, nullptr);
+
+        vkFreeMemory(device, topLevelAccelerationStructure.memory, nullptr);
+        vkDestroyAccelerationStructureKHR(device, topLevelAccelerationStructure.accelerationStructure, nullptr);
+
+        vkFreeMemory(device, bottomLevelAccelerationStructure.memory, nullptr);
+        vkDestroyAccelerationStructureKHR(device, bottomLevelAccelerationStructure.accelerationStructure, nullptr);
+
+        vkDestroyPipeline(device, rasterPipeline, nullptr);
+        vkDestroyPipelineLayout(device, rasterPipelineLayout, nullptr);
+        vkDestroyPipelineCache(device, pipelineCache, nullptr);
+
+        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+
+        vkDestroyBuffer(device, indexBuffer.buffer, nullptr);
+        vkFreeMemory(device, indexBuffer.memory, nullptr);
+
+        vkDestroyBuffer(device, vertexBuffer.buffer, nullptr);
+        vkFreeMemory(device, vertexBuffer.memory, nullptr);
+
+        for (VkFramebuffer& framebuffer : framebuffers) {
+            vkDestroyFramebuffer(device, framebuffer, nullptr);
+        }
+
+        vkDestroyImageView(device, depthImageView, nullptr);
+        vkDestroyImage(device, depthImage, nullptr);
+        vkFreeMemory(device, depthImageMemory, nullptr);
+
+        for (VkImageView& imageView : swapchainImageViews) {
+            vkDestroyImageView(device, imageView, nullptr);
+        }
+
+        vkDestroySwapchainKHR(device, swapchain, nullptr);
+        vkDestroyDevice(device, nullptr);
+        vkDestroySurfaceKHR(instance, surface, nullptr);
+
+#ifdef _DEBUG
+        vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
+#endif
+
+        vkDestroyInstance(instance, nullptr);
+
+        glfwTerminate();
+        return -1;
+    }
+
+    vkBindImageMemory(device, rayTracingImage, rayTracingImageMemory, 0);
+
+    VkImageView rayTracingImageView = createImageView(device, rayTracingImage, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 
     VkPushConstantRange rayTracePushConstantRange = {};
     rayTracePushConstantRange.offset              = 0;
@@ -997,7 +1060,11 @@ int main(int, char*[]) {
     writeDescriptorSetAccelerationStructure.accelerationStructureCount                   = 1;
     writeDescriptorSetAccelerationStructure.pAccelerationStructures                      = &topLevelAccelerationStructure.accelerationStructure;
 
-    std::vector<VkWriteDescriptorSet> writeDescriptorSets(2, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
+    VkDescriptorImageInfo descriptorImageInfo = {};
+    descriptorImageInfo.imageView             = rayTracingImageView;
+    descriptorImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
+
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets(3, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
     writeDescriptorSets[0].dstSet          = descriptorSet;
     writeDescriptorSets[0].dstBinding      = 0;
     writeDescriptorSets[0].dstArrayElement = 0;
@@ -1011,6 +1078,13 @@ int main(int, char*[]) {
     writeDescriptorSets[1].descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
     writeDescriptorSets[1].descriptorCount = 1;
     writeDescriptorSets[1].pNext           = &writeDescriptorSetAccelerationStructure;
+
+    writeDescriptorSets[2].dstSet          = descriptorSet;
+    writeDescriptorSets[2].dstBinding      = 3;
+    writeDescriptorSets[2].dstArrayElement = 0;
+    writeDescriptorSets[2].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writeDescriptorSets[2].descriptorCount = 1;
+    writeDescriptorSets[2].pImageInfo      = &descriptorImageInfo;
 
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
@@ -1159,6 +1233,10 @@ int main(int, char*[]) {
 
     vkDestroyPipeline(device, rayTracePipeline, nullptr);
     vkDestroyPipelineLayout(device, rayTracePipelineLayout, nullptr);
+
+    vkDestroyImageView(device, rayTracingImageView, nullptr);
+    vkDestroyImage(device, rayTracingImage, nullptr);
+    vkFreeMemory(device, rayTracingImageMemory, nullptr);
 
     vkFreeMemory(device, topLevelAccelerationStructure.memory, nullptr);
     vkDestroyAccelerationStructureKHR(device, topLevelAccelerationStructure.accelerationStructure, nullptr);
