@@ -70,7 +70,7 @@ VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface
     swapchainCreateInfo.pQueueFamilyIndices      = &graphicsQueueFamilyIndex;
     swapchainCreateInfo.preTransform             = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     swapchainCreateInfo.presentMode              = presentMode;
-    swapchainCreateInfo.imageUsage               = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    swapchainCreateInfo.imageUsage               = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
     swapchainCreateInfo.imageFormat              = surfaceFormat.format;
     swapchainCreateInfo.imageColorSpace          = surfaceFormat.colorSpace;
     swapchainCreateInfo.imageExtent              = imageExtent;
@@ -85,14 +85,8 @@ VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface
     return swapchain;
 }
 
-std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, const VkSwapchainKHR swapchain, const VkFormat surfaceFormat) {
-    uint32_t swapchainImageCount;
-    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, 0));
-
-    std::vector<VkImage> swapchainImages(swapchainImageCount);
-    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data()));
-
-    std::vector<VkImageView> swapchainImageViews(swapchainImageCount);
+std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, std::vector<VkImage>& swapchainImages, const VkFormat surfaceFormat) {
+    std::vector<VkImageView> swapchainImageViews(swapchainImages.size());
 
     VkImageViewCreateInfo imageViewCreateInfo           = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     imageViewCreateInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
@@ -107,7 +101,7 @@ std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, const VkS
     imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
     imageViewCreateInfo.subresourceRange.layerCount     = 1;
 
-    for (size_t i = 0; i < swapchainImageCount; ++i) {
+    for (size_t i = 0; i < swapchainImages.size(); ++i) {
         imageViewCreateInfo.image = swapchainImages[i];
         VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &swapchainImageViews[i]));
     }

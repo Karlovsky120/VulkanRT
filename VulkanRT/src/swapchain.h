@@ -24,4 +24,4 @@ VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface
                                const uint32_t imageCount, const uint32_t graphicsQueueFamilyIndex, const VkExtent2D imageExtent,
                                const VkSwapchainKHR oldSwapchain);
 
-std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, const VkSwapchainKHR swapchain, const VkFormat surfaceFormat);
+std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, std::vector<VkImage>& swapchainImages, const VkFormat surfaceFormat);

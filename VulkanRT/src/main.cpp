@@ -515,12 +515,16 @@ void recordRasterCommandBuffer(const VkCommandBuffer commandBuffer, const VkRend
 
 void recordRayTracingCommandBuffer(const VkCommandBuffer commandBuffer, const VkExtent2D renderArea, const VkPipeline pipeline,
                                    const VkPipelineLayout pipelineLayout, const VkDescriptorSet descriptorSet, const VkImage swapchainImage,
-                                   const VkImage rayTracingImage, const VkStridedBufferRegionKHR* pRaygenStridedBufferRegion,
-                                   const VkStridedBufferRegionKHR* pClosestHitStridedBufferRegion, const VkStridedBufferRegionKHR* pMissStridedBufferRegion,
-                                   const VkStridedBufferRegionKHR* pCallableBufferRegion, const RayTracePushData& rayTracePushData) {
+                                   const VkStridedBufferRegionKHR* pRaygenStridedBufferRegion, const VkStridedBufferRegionKHR* pClosestHitStridedBufferRegion,
+                                   const VkStridedBufferRegionKHR* pMissStridedBufferRegion, const VkStridedBufferRegionKHR* pCallableBufferRegion,
+                                   const RayTracePushData& rayTracePushData) {
     VkCommandBufferBeginInfo commandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
     VK_CHECK(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
+
+    VkImageMemoryBarrier undefinedToGeneral = createImageMemoryBarrier(swapchainImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &undefinedToGeneral);
 
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RayTracePushData), &rayTracePushData);
 
@@ -530,36 +534,9 @@ void recordRayTracingCommandBuffer(const VkCommandBuffer commandBuffer, const Vk
     vkCmdTraceRaysKHR(commandBuffer, pRaygenStridedBufferRegion, pMissStridedBufferRegion, pClosestHitStridedBufferRegion, pCallableBufferRegion,
                       renderArea.width, renderArea.height, 1);
 
-    VkImageMemoryBarrier undefinedToTransferDst = createImageMemoryBarrier(swapchainImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkImageMemoryBarrier generalToPresentSrc = createImageMemoryBarrier(swapchainImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                         &undefinedToTransferDst);
-
-    VkImageSubresourceLayers imageSubresourceLayers = {};
-    imageSubresourceLayers.aspectMask               = VK_IMAGE_ASPECT_COLOR_BIT;
-    imageSubresourceLayers.mipLevel                 = 0;
-    imageSubresourceLayers.baseArrayLayer           = 0;
-    imageSubresourceLayers.layerCount               = 1;
-
-    VkImageCopy imageCopy    = {};
-    imageCopy.srcSubresource = imageSubresourceLayers;
-    imageCopy.srcOffset      = {0, 0, 0};
-    imageCopy.dstSubresource = imageSubresourceLayers;
-    imageCopy.dstOffset      = {0, 0, 0};
-    imageCopy.extent         = {renderArea.width, renderArea.height, 1};
-
-    VkImageMemoryBarrier generalToTransferSrc = createImageMemoryBarrier(rayTracingImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                         &generalToTransferSrc);
-
-    vkCmdCopyImage(commandBuffer, rayTracingImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageCopy);
-
-    VkImageMemoryBarrier transferSrcToGeneral = createImageMemoryBarrier(rayTracingImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                         &transferSrcToGeneral);
-
-    VkImageMemoryBarrier transferDstToPresent = createImageMemoryBarrier(swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                         &transferDstToPresent);
+                         &generalToPresentSrc);
 
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
@@ -653,9 +630,7 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, bool& rayTrace,
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,
                                       VkSwapchainKHR& swapchain, std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
                                       VkImageView& depthImageView, VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkRenderPass& renderPass,
-                                      std::vector<VkFramebuffer>& framebuffers, VkImageView& rayTracingImageView, VkImage& rayTracingImage,
-                                      VkDeviceMemory& rayTracingImageMemory, const VkDescriptorSet descriptorSet, const VkCommandPool commandPool,
-                                      const VkQueue queue, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
+                                      std::vector<VkFramebuffer>& framebuffers, const std::vector<VkDescriptorSet>& descriptorSets, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
                                       const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat,
                                       const VkPresentModeKHR presentMode, uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex,
                                       float& oneOverAspectRatio, float& aspectRatio) {
@@ -683,10 +658,6 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
         vkDestroyImageView(device, imageView, nullptr);
     }
 
-    vkDestroyImageView(device, rayTracingImageView, nullptr);
-    vkFreeMemory(device, rayTracingImageMemory, nullptr);
-    vkDestroyImage(device, rayTracingImage, nullptr);
-
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
     surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
 
@@ -699,7 +670,24 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     swapchain = newSwapchain;
 
     vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data());
-    swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
+    swapchainImageViews = getSwapchainImageViews(device, swapchainImages, surfaceFormat.format);
+
+    VkDescriptorImageInfo descriptorSwapchainImageInfo = {};
+    descriptorSwapchainImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet writeDescriptorSet = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    writeDescriptorSet.dstBinding      = 3;
+    writeDescriptorSet.dstArrayElement = 0;
+    writeDescriptorSet.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writeDescriptorSet.descriptorCount = 1;
+    writeDescriptorSet.pImageInfo      = &descriptorSwapchainImageInfo;
+
+    for (size_t i = 0; i < swapchainImageCount; ++i) {
+        descriptorSwapchainImageInfo.imageView = swapchainImageViews[i];
+        writeDescriptorSet.dstSet = descriptorSets[i];
+
+        vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+    }
 
     depthImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_FORMAT_D32_SFLOAT_S8_UINT);
     VkMemoryRequirements depthImageMemoryRequirements;
@@ -710,53 +698,6 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
 
     renderPass   = createRenderPass(device, surfaceFormat.format);
     framebuffers = createFramebuffers(device, renderPass, swapchainImageCount, swapchainImageViews, depthImageView, surfaceExtent);
-
-    rayTracingImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_FORMAT_B8G8R8A8_UNORM);
-    VkMemoryRequirements rayTracingImageMemoryRequirements;
-    vkGetImageMemoryRequirements(device, rayTracingImage, &rayTracingImageMemoryRequirements);
-    rayTracingImageMemory =
-        allocateVulkanObjectMemory(device, rayTracingImageMemoryRequirements, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    vkBindImageMemory(device, rayTracingImage, rayTracingImageMemory, 0);
-    rayTracingImageView = createImageView(device, rayTracingImage, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
-
-    VkCommandBufferAllocateInfo layoutCommandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    layoutCommandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    layoutCommandBufferAllocateInfo.commandPool                 = commandPool;
-    layoutCommandBufferAllocateInfo.commandBufferCount          = 1;
-
-    VkCommandBuffer layoutCommandBuffer = 0;
-    vkAllocateCommandBuffers(device, &layoutCommandBufferAllocateInfo, &layoutCommandBuffer);
-
-    VkCommandBufferBeginInfo layoutCommandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    vkBeginCommandBuffer(layoutCommandBuffer, &layoutCommandBufferBeginInfo);
-
-    VkImageMemoryBarrier rayTracingImageUndefinedToGeneral = createImageMemoryBarrier(rayTracingImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    vkCmdPipelineBarrier(layoutCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                         &rayTracingImageUndefinedToGeneral);
-    vkEndCommandBuffer(layoutCommandBuffer);
-
-    VkSubmitInfo layoutBufferSubmitInfo       = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    layoutBufferSubmitInfo.commandBufferCount = 1;
-    layoutBufferSubmitInfo.pCommandBuffers    = &layoutCommandBuffer;
-
-    vkQueueSubmit(queue, 1, &layoutBufferSubmitInfo, nullptr);
-    vkDeviceWaitIdle(device);
-
-    vkFreeCommandBuffers(device, commandPool, 1, &layoutCommandBuffer);
-
-    VkDescriptorImageInfo descriptorImageInfo = {};
-    descriptorImageInfo.imageView             = rayTracingImageView;
-    descriptorImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
-
-    VkWriteDescriptorSet writeDescriptorSet = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    writeDescriptorSet.dstSet               = descriptorSet;
-    writeDescriptorSet.dstBinding           = 3;
-    writeDescriptorSet.dstArrayElement      = 0;
-    writeDescriptorSet.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writeDescriptorSet.descriptorCount      = 1;
-    writeDescriptorSet.pImageInfo           = &descriptorImageInfo;
-
-    vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 }
 
 int main(int, char*[]) {
@@ -921,9 +862,9 @@ int main(int, char*[]) {
     VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities));
 
-    uint32_t requestedSwapchainImageCount;
+    uint32_t swapchainImageCount;
     try {
-        requestedSwapchainImageCount = getSwapchainImageCount(surfaceCapabilities);
+        swapchainImageCount = getSwapchainImageCount(surfaceCapabilities);
     } catch (std::runtime_error& e) {
         printf("%s", e.what());
 
@@ -944,10 +885,12 @@ int main(int, char*[]) {
 
     VkPresentModeKHR presentMode = getPresentMode(physicalDevice, surface);
     VkSwapchainKHR   swapchain =
-        createSwapchain(device, surface, surfaceFormat, presentMode, requestedSwapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent, VK_NULL_HANDLE);
+        createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent, VK_NULL_HANDLE);
 
-    std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchain, surfaceFormat.format);
-    uint32_t                 swapchainImageCount = static_cast<uint32_t>(swapchainImageViews.size());
+    std::vector<VkImage> swapchainImages(swapchainImageCount);
+    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data()));
+
+    std::vector<VkImageView> swapchainImageViews = getSwapchainImageViews(device, swapchainImages, surfaceFormat.format);
 
     VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalDeviceMemoryProperties);
@@ -1104,91 +1047,6 @@ int main(int, char*[]) {
     AccelerationStructure topLevelAccelerationStructure =
         createTopAccelerationStructure(device, bottomLevelAccelerationStructure, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
 
-    VkImage        rayTracingImage = createImage(device, surfaceExtent, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_FORMAT_B8G8R8A8_UNORM);
-    VkDeviceMemory rayTracingImageMemory = 0;
-    try {
-        VkMemoryRequirements rayTracingImageMemoryRequirements;
-        vkGetImageMemoryRequirements(device, rayTracingImage, &rayTracingImageMemoryRequirements);
-        rayTracingImageMemory =
-            allocateVulkanObjectMemory(device, rayTracingImageMemoryRequirements, physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    } catch (std::runtime_error& e) {
-        printf("%s", e.what());
-
-        vkDestroyImage(device, rayTracingImage, nullptr);
-
-        vkFreeMemory(device, topLevelAccelerationStructure.memory, nullptr);
-        vkDestroyAccelerationStructureKHR(device, topLevelAccelerationStructure.accelerationStructure, nullptr);
-
-        vkFreeMemory(device, bottomLevelAccelerationStructure.memory, nullptr);
-        vkDestroyAccelerationStructureKHR(device, bottomLevelAccelerationStructure.accelerationStructure, nullptr);
-
-        vkDestroyPipeline(device, rasterPipeline, nullptr);
-        vkDestroyPipelineLayout(device, rasterPipelineLayout, nullptr);
-        vkDestroyPipelineCache(device, pipelineCache, nullptr);
-
-        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-
-        vkDestroyBuffer(device, indexBuffer.buffer, nullptr);
-        vkFreeMemory(device, indexBuffer.memory, nullptr);
-
-        vkDestroyBuffer(device, vertexBuffer.buffer, nullptr);
-        vkFreeMemory(device, vertexBuffer.memory, nullptr);
-
-        for (VkFramebuffer& framebuffer : framebuffers) {
-            vkDestroyFramebuffer(device, framebuffer, nullptr);
-        }
-
-        vkDestroyImageView(device, depthImageView, nullptr);
-        vkDestroyImage(device, depthImage, nullptr);
-        vkFreeMemory(device, depthImageMemory, nullptr);
-
-        for (VkImageView& imageView : swapchainImageViews) {
-            vkDestroyImageView(device, imageView, nullptr);
-        }
-
-        vkDestroySwapchainKHR(device, swapchain, nullptr);
-        vkDestroyDevice(device, nullptr);
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-
-#ifdef _DEBUG
-        vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
-#endif
-
-        vkDestroyInstance(instance, nullptr);
-
-        glfwTerminate();
-        return -1;
-    }
-
-    vkBindImageMemory(device, rayTracingImage, rayTracingImageMemory, 0);
-
-    VkImageView rayTracingImageView = createImageView(device, rayTracingImage, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
-
-    VkCommandBufferAllocateInfo layoutCommandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    layoutCommandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    layoutCommandBufferAllocateInfo.commandPool                 = transferCommandPool;
-    layoutCommandBufferAllocateInfo.commandBufferCount          = 1;
-
-    VkCommandBuffer layoutCommandBuffer = 0;
-    vkAllocateCommandBuffers(device, &layoutCommandBufferAllocateInfo, &layoutCommandBuffer);
-
-    VkCommandBufferBeginInfo layoutCommandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    vkBeginCommandBuffer(layoutCommandBuffer, &layoutCommandBufferBeginInfo);
-
-    VkImageMemoryBarrier rayTracingImageUndefinedToGeneral = createImageMemoryBarrier(rayTracingImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    vkCmdPipelineBarrier(layoutCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                         &rayTracingImageUndefinedToGeneral);
-    vkEndCommandBuffer(layoutCommandBuffer);
-
-    VkSubmitInfo layoutBufferSubmitInfo       = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    layoutBufferSubmitInfo.commandBufferCount = 1;
-    layoutBufferSubmitInfo.pCommandBuffers    = &layoutCommandBuffer;
-
-    vkQueueSubmit(queue, 1, &layoutBufferSubmitInfo, nullptr);
-    vkDeviceWaitIdle(device);
-
-    vkFreeCommandBuffers(device, transferCommandPool, 1, &layoutCommandBuffer);
-
     VkPushConstantRange rayTracePushConstantRange = {};
     rayTracePushConstantRange.offset              = 0;
     rayTracePushConstantRange.size                = sizeof(RayTracePushData);
@@ -1215,26 +1073,30 @@ int main(int, char*[]) {
 
     // clang-format off
     std::vector<VkDescriptorPoolSize> descriptorPoolSizes = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}
     };
     // clang-format on
 
     VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     descriptorPoolCreateInfo.poolSizeCount              = static_cast<uint32_t>(descriptorPoolSizes.size());
     descriptorPoolCreateInfo.pPoolSizes                 = descriptorPoolSizes.data();
-    descriptorPoolCreateInfo.maxSets                    = 1;
+    descriptorPoolCreateInfo.maxSets                    = swapchainImageCount;
 
     VkDescriptorPool descriptorPool = 0;
     VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &descriptorPool));
 
+    // Allocating one descriptor set for each swapchain image, all with the same layout
+    std::vector<VkDescriptorSetLayout> descriptorSetLayouts(swapchainImageCount, descriptorSetLayout);
+
     VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     descriptorSetAllocateInfo.descriptorPool              = descriptorPool;
-    descriptorSetAllocateInfo.descriptorSetCount          = 1;
-    descriptorSetAllocateInfo.pSetLayouts                 = &descriptorSetLayout;
+    descriptorSetAllocateInfo.descriptorSetCount          = swapchainImageCount;
+    descriptorSetAllocateInfo.pSetLayouts                 = descriptorSetLayouts.data();
 
-    VkDescriptorSet descriptorSet = 0;
-    vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
+    std::vector<VkDescriptorSet> descriptorSets(swapchainImageCount);
+    vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, descriptorSets.data());
 
     std::vector<VkDescriptorBufferInfo> descriptorBufferInfos(2);
     descriptorBufferInfos[0].buffer = vertexBuffer.buffer;
@@ -1249,33 +1111,37 @@ int main(int, char*[]) {
     writeDescriptorSetAccelerationStructure.accelerationStructureCount                   = 1;
     writeDescriptorSetAccelerationStructure.pAccelerationStructures                      = &topLevelAccelerationStructure.accelerationStructure;
 
-    VkDescriptorImageInfo descriptorImageInfo = {};
-    descriptorImageInfo.imageView             = rayTracingImageView;
-    descriptorImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
+    VkDescriptorImageInfo descriptorSwapchainImageInfo = {};
+    descriptorSwapchainImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
 
     std::vector<VkWriteDescriptorSet> writeDescriptorSets(3, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
-    writeDescriptorSets[0].dstSet          = descriptorSet;
-    writeDescriptorSets[0].dstBinding      = 0;
+    writeDescriptorSets[0].dstBinding      = 0; // 0 for vertex and 1 for index buffer
     writeDescriptorSets[0].dstArrayElement = 0;
     writeDescriptorSets[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writeDescriptorSets[0].descriptorCount = static_cast<uint32_t>(descriptorBufferInfos.size());
     writeDescriptorSets[0].pBufferInfo     = descriptorBufferInfos.data();
 
-    writeDescriptorSets[1].dstSet          = descriptorSet;
     writeDescriptorSets[1].dstBinding      = 2;
     writeDescriptorSets[1].dstArrayElement = 0;
     writeDescriptorSets[1].descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
     writeDescriptorSets[1].descriptorCount = 1;
     writeDescriptorSets[1].pNext           = &writeDescriptorSetAccelerationStructure;
 
-    writeDescriptorSets[2].dstSet          = descriptorSet;
     writeDescriptorSets[2].dstBinding      = 3;
     writeDescriptorSets[2].dstArrayElement = 0;
     writeDescriptorSets[2].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writeDescriptorSets[2].descriptorCount = 1;
-    writeDescriptorSets[2].pImageInfo      = &descriptorImageInfo;
+    writeDescriptorSets[2].pImageInfo      = &descriptorSwapchainImageInfo;
 
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+    for (size_t i = 0; i < swapchainImageCount; ++i) {
+        descriptorSwapchainImageInfo.imageView = swapchainImageViews[i];
+
+        writeDescriptorSets[0].dstSet = descriptorSets[i];
+        writeDescriptorSets[1].dstSet = descriptorSets[i];
+        writeDescriptorSets[2].dstSet = descriptorSets[i];
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+    }
 
     const uint32_t shaderGroupCount = 3;
 
@@ -1330,19 +1196,16 @@ int main(int, char*[]) {
     commandPoolCreateInfo.queueFamilyIndex        = graphicsQueueFamilyIndex;
 
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    layoutCommandBufferAllocateInfo.level                 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    layoutCommandBufferAllocateInfo.commandBufferCount    = 1;
+    commandBufferAllocateInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    commandBufferAllocateInfo.commandBufferCount          = 1;
 
     std::vector<VkCommandPool>   commandPools(swapchainImageCount);
     std::vector<VkCommandBuffer> commandBuffers(swapchainImageCount);
     for (size_t i = 0; i < swapchainImageCount; ++i) {
         VK_CHECK(vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPools[i]));
-        layoutCommandBufferAllocateInfo.commandPool = commandPools[i];
-        VK_CHECK(vkAllocateCommandBuffers(device, &layoutCommandBufferAllocateInfo, &commandBuffers[i]));
+        commandBufferAllocateInfo.commandPool = commandPools[i];
+        VK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffers[i]));
     }
-
-    std::vector<VkImage> swapchainImages(swapchainImageCount);
-    vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data());
 
     std::vector<VkSemaphore> imageAvailableSemaphores(MAX_FRAMES_IN_FLIGHT);
     std::vector<VkSemaphore> renderFinishedSemaphores(MAX_FRAMES_IN_FLIGHT);
@@ -1388,8 +1251,7 @@ int main(int, char*[]) {
         VkResult acquireResult = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImages, swapchainImageViews, depthImageView,
-                                             depthImage, depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage,
-                                             rayTracingImageMemory, descriptorSet, transferCommandPool, queue, surfaceCapabilities, surfaceExtent,
+                                             depthImage, depthImageMemory, renderPass, framebuffers, descriptorSets, surfaceCapabilities, surfaceExtent,
                                              physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex,
                                              rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
 
@@ -1422,13 +1284,13 @@ int main(int, char*[]) {
         VkPipelineStageFlags waitStage;
 
         if (rayTrace) {
-            recordRayTracingCommandBuffer(commandBuffers[imageIndex], surfaceExtent, rayTracePipeline, rayTracePipelineLayout, descriptorSet,
-                                          swapchainImages[imageIndex], rayTracingImage, &raygenStridedBufferRegion, &closestHitStridedBufferRegion,
-                                          &missStridedBufferRegion, &callableStridedBufferRegion, rayTracePushData);
+            recordRayTracingCommandBuffer(commandBuffers[imageIndex], surfaceExtent, rayTracePipeline, rayTracePipelineLayout, descriptorSets[imageIndex],
+                                          swapchainImages[imageIndex], &raygenStridedBufferRegion, &closestHitStridedBufferRegion, &missStridedBufferRegion,
+                                          &callableStridedBufferRegion, rayTracePushData);
             waitStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
         } else {
             recordRasterCommandBuffer(commandBuffers[imageIndex], renderPass, framebuffers[imageIndex], surfaceExtent, rasterPipeline, rasterPipelineLayout,
-                                      descriptorSet, rasterPushData, static_cast<uint32_t>(cubeIndices.size()));
+                                      descriptorSets[imageIndex], rasterPushData, static_cast<uint32_t>(cubeIndices.size()));
             waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         }
 
@@ -1455,8 +1317,7 @@ int main(int, char*[]) {
         VkResult presentResult = vkQueuePresentKHR(queue, &presentInfo);
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImages, swapchainImageViews, depthImageView,
-                                             depthImage, depthImageMemory, renderPass, framebuffers, rayTracingImageView, rayTracingImage,
-                                             rayTracingImageMemory, descriptorSet, transferCommandPool, queue, surfaceCapabilities, surfaceExtent,
+                                             depthImage, depthImageMemory, renderPass, framebuffers, descriptorSets, surfaceCapabilities, surfaceExtent,
                                              physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex,
                                              rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
 
@@ -1496,10 +1357,6 @@ int main(int, char*[]) {
 
     vkDestroyPipeline(device, rayTracePipeline, nullptr);
     vkDestroyPipelineLayout(device, rayTracePipelineLayout, nullptr);
-
-    vkDestroyImageView(device, rayTracingImageView, nullptr);
-    vkDestroyImage(device, rayTracingImage, nullptr);
-    vkFreeMemory(device, rayTracingImageMemory, nullptr);
 
     vkFreeMemory(device, topLevelAccelerationStructure.memory, nullptr);
     vkDestroyAccelerationStructureKHR(device, topLevelAccelerationStructure.accelerationStructure, nullptr);
