@@ -621,6 +621,7 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, bool& rayTrace,
     rasterPushData.cameraTransformation = glm::rotate(rasterPushData.cameraTransformation, static_cast<float>(camera.orientation.y), globalRight);
 
     rayTracePushData.cameraTransformationInverse = glm::inverse(rasterPushData.cameraTransformation);
+    rayTracePushData.inversePerspectiveTransformation = glm::transpose(glm::perspective(90.0f, 16 / 9.0f, 0.001f, 1000.0f));
 
     if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
         rayTrace = !rayTrace;
@@ -630,10 +631,11 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, bool& rayTrace,
 void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDevice physicalDevice, GLFWwindow* window, const VkSurfaceKHR surface,
                                       VkSwapchainKHR& swapchain, std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
                                       VkImageView& depthImageView, VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkRenderPass& renderPass,
-                                      std::vector<VkFramebuffer>& framebuffers, const std::vector<VkDescriptorSet>& descriptorSets, VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
+                                      std::vector<VkFramebuffer>& framebuffers, const std::vector<VkDescriptorSet>& descriptorSets,
+                                      VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
                                       const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat,
                                       const VkPresentModeKHR presentMode, uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex,
-                                      float& oneOverAspectRatio, float& aspectRatio) {
+                                      float& oneOverAspectRatio/*, float& aspectRatio*/) {
 
     int width  = 0;
     int height = 0;
@@ -662,7 +664,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
 
     oneOverAspectRatio = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
-    aspectRatio        = static_cast<float>(surfaceExtent.width) / static_cast<float>(surfaceExtent.height);
+    //aspectRatio        = static_cast<float>(surfaceExtent.width) / static_cast<float>(surfaceExtent.height);
 
     VkSwapchainKHR newSwapchain =
         createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent, swapchain);
@@ -676,15 +678,15 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     descriptorSwapchainImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
 
     VkWriteDescriptorSet writeDescriptorSet = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    writeDescriptorSet.dstBinding      = 3;
-    writeDescriptorSet.dstArrayElement = 0;
-    writeDescriptorSet.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writeDescriptorSet.descriptorCount = 1;
-    writeDescriptorSet.pImageInfo      = &descriptorSwapchainImageInfo;
+    writeDescriptorSet.dstBinding           = 3;
+    writeDescriptorSet.dstArrayElement      = 0;
+    writeDescriptorSet.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writeDescriptorSet.descriptorCount      = 1;
+    writeDescriptorSet.pImageInfo           = &descriptorSwapchainImageInfo;
 
     for (size_t i = 0; i < swapchainImageCount; ++i) {
         descriptorSwapchainImageInfo.imageView = swapchainImageViews[i];
-        writeDescriptorSet.dstSet = descriptorSets[i];
+        writeDescriptorSet.dstSet              = descriptorSets[i];
 
         vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
     }
@@ -1041,7 +1043,7 @@ int main(int, char*[]) {
     vkDestroyShaderModule(device, vertexShader, nullptr);
 
     AccelerationStructure bottomLevelAccelerationStructure = createBottomAccelerationStructure(
-        device, static_cast<uint32_t>(cubeVertices.size()), static_cast<uint32_t>(cubeIndices.size() / 3), vertexBuffer.deviceAddress,
+        device, static_cast<uint32_t>(cubeVertices.size() / 3), static_cast<uint32_t>(cubeIndices.size() / 3), vertexBuffer.deviceAddress,
         indexBuffer.deviceAddress, physicalDeviceMemoryProperties, queue, graphicsQueueFamilyIndex);
 
     AccelerationStructure topLevelAccelerationStructure =
@@ -1232,9 +1234,9 @@ int main(int, char*[]) {
     rasterPushData.near                = NEAR;
 
     RayTracePushData rayTracePushData = {};
-    rayTracePushData.tanOfHalfFov     = tan(0.5f * FOV);
-    rayTracePushData.aspectRatio      = static_cast<float>(surfaceExtent.width) / static_cast<float>(surfaceExtent.height);
-    rayTracePushData.oneOverNear      = 1.0f / NEAR;
+    //rayTracePushData.tanOfHalfFov     = tan(0.5f * FOV);
+    //rayTracePushData.aspectRatio      = static_cast<float>(surfaceExtent.width) / static_cast<float>(surfaceExtent.height);
+    //rayTracePushData.oneOverNear      = 1.0f / NEAR;
 
     uint32_t currentFrame = 0;
     bool     rayTrace     = true;
@@ -1253,7 +1255,7 @@ int main(int, char*[]) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImages, swapchainImageViews, depthImageView,
                                              depthImage, depthImageMemory, renderPass, framebuffers, descriptorSets, surfaceCapabilities, surfaceExtent,
                                              physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex,
-                                             rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
+                                             rasterPushData.oneOverAspectRatio/*, rayTracePushData.aspectRatio*/);
 
             continue;
         } else if (acquireResult != VK_SUBOPTIMAL_KHR) {
@@ -1319,7 +1321,7 @@ int main(int, char*[]) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImages, swapchainImageViews, depthImageView,
                                              depthImage, depthImageMemory, renderPass, framebuffers, descriptorSets, surfaceCapabilities, surfaceExtent,
                                              physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex,
-                                             rasterPushData.oneOverAspectRatio, rayTracePushData.aspectRatio);
+                                             rasterPushData.oneOverAspectRatio/*, rayTracePushData.aspectRatio*/);
 
             continue;
         } else {
@@ -1358,11 +1360,14 @@ int main(int, char*[]) {
     vkDestroyPipeline(device, rayTracePipeline, nullptr);
     vkDestroyPipelineLayout(device, rayTracePipelineLayout, nullptr);
 
-    vkFreeMemory(device, topLevelAccelerationStructure.memory, nullptr);
-    vkDestroyAccelerationStructureKHR(device, topLevelAccelerationStructure.accelerationStructure, nullptr);
+    vkDestroyBuffer(device, topLevelAccelerationStructure.instanceBuffer.buffer, nullptr);
+    vkFreeMemory(device, topLevelAccelerationStructure.instanceBuffer.memory, nullptr);
 
-    vkFreeMemory(device, bottomLevelAccelerationStructure.memory, nullptr);
+    vkDestroyAccelerationStructureKHR(device, topLevelAccelerationStructure.accelerationStructure, nullptr);
+    vkFreeMemory(device, topLevelAccelerationStructure.memory, nullptr);
+
     vkDestroyAccelerationStructureKHR(device, bottomLevelAccelerationStructure.accelerationStructure, nullptr);
+    vkFreeMemory(device, bottomLevelAccelerationStructure.memory, nullptr);
 
     vkDestroyPipeline(device, rasterPipeline, nullptr);
     vkDestroyPipelineLayout(device, rasterPipelineLayout, nullptr);

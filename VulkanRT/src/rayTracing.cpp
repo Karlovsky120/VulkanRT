@@ -1,7 +1,6 @@
 #include "rayTracing.h"
 
 #include "commandPools.h"
-#include "resources.h"
 
 #pragma warning(push, 0)
 #include <cassert>
@@ -60,7 +59,7 @@ AccelerationStructure createBottomAccelerationStructure(const VkDevice device, c
     VkAccelerationStructureGeometryTrianglesDataKHR geometryTrianglesData = {};
     geometryTrianglesData.vertexFormat                                    = VK_FORMAT_R32G32B32_SFLOAT;
     geometryTrianglesData.vertexData.deviceAddress                        = vertexBufferAddress;
-    geometryTrianglesData.vertexStride                                    = sizeof(uint32_t);
+    geometryTrianglesData.vertexStride                                    = 3 * sizeof(float);
     geometryTrianglesData.indexType                                       = VK_INDEX_TYPE_UINT16;
     geometryTrianglesData.indexData.deviceAddress                         = indexBufferAddress;
 
@@ -138,7 +137,7 @@ AccelerationStructure createBottomAccelerationStructure(const VkDevice device, c
 }
 
 AccelerationStructure createTopAccelerationStructure(const VkDevice device, const AccelerationStructure bottomLevelAccelerationStructure,
-                                                     const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkQueue queue,
+                                                     const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties, const VkQueue queue,
                                                      const uint32_t queueFamilyIndex) {
     VkAccelerationStructureCreateGeometryTypeInfoKHR createGeometryTypeInfo = {VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_GEOMETRY_TYPE_INFO_KHR};
     createGeometryTypeInfo.geometryType                                     = VK_GEOMETRY_TYPE_INSTANCES_KHR;
@@ -192,14 +191,15 @@ AccelerationStructure createTopAccelerationStructure(const VkDevice device, cons
 
     VkAccelerationStructureInstanceKHR instance;
     instance.transform                              = transformationMatrix;
-    instance.instanceCustomIndex                    = 1;
+    instance.instanceCustomIndex                    = 0;
     instance.mask                                   = 0xFF;
     instance.instanceShaderBindingTableRecordOffset = 0;
     instance.flags                                  = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
     instance.accelerationStructureReference         = bottomLevelAccelerationStructure.deviceAddress;
 
-    Buffer instanceBuffer = createBuffer(device, sizeof(VkAccelerationStructureInstanceKHR),
-                                         VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+    accelerationStructure.instanceBuffer =
+        createBuffer(device, sizeof(VkAccelerationStructureInstanceKHR),
+                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                          physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     std::vector<VkAccelerationStructureInstanceKHR> instances = {instance};
@@ -209,20 +209,18 @@ AccelerationStructure createTopAccelerationStructure(const VkDevice device, cons
     Buffer stagingBuffer = createBuffer(device, sizeof(VkAccelerationStructureInstanceKHR), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, physicalDeviceMemoryProperties,
                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
-    uploadToDeviceLocalBuffer(device, instances, stagingBuffer.buffer, stagingBuffer.memory, instanceBuffer.buffer, commandPool, queue);
+    uploadToDeviceLocalBuffer(device, instances, stagingBuffer.buffer, stagingBuffer.memory, accelerationStructure.instanceBuffer.buffer, commandPool, queue);
 
     vkFreeMemory(device, stagingBuffer.memory, nullptr);
     vkDestroyBuffer(device, stagingBuffer.buffer, nullptr);
 
-    VkBufferDeviceAddressInfo instanceBufferDeviceAddressInfo = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
-    instanceBufferDeviceAddressInfo.buffer = instanceBuffer.buffer;
-
-    VkAccelerationStructureGeometryInstancesDataKHR geometryInstanceData = {};
+    VkAccelerationStructureGeometryInstancesDataKHR geometryInstanceData = {VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR};
     geometryInstanceData.arrayOfPointers                                 = VK_FALSE;
-    geometryInstanceData.data.deviceAddress                              = vkGetBufferDeviceAddress(device, &instanceBufferDeviceAddressInfo);
+    geometryInstanceData.data.deviceAddress                              = accelerationStructure.instanceBuffer.deviceAddress;
 
     VkAccelerationStructureGeometryKHR geometry   = {VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
-    geometry.flags                                = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    geometry.geometryType                         = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    geometry.flags                                = VK_GEOMETRY_OPAQUE_BIT_KHR;
     geometry.geometry.instances                   = geometryInstanceData;
     VkAccelerationStructureGeometryKHR* pGeometry = &geometry;
 
@@ -238,19 +236,16 @@ AccelerationStructure createTopAccelerationStructure(const VkDevice device, cons
                                         VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, physicalDeviceMemoryProperties,
                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
-    VkBufferDeviceAddressInfo scratchBufferDeviceAddressInfo = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
-    scratchBufferDeviceAddressInfo.buffer                    = scratchBuffer.buffer;
-
     VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
     buildGeometryInfo.type                                        = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
     buildGeometryInfo.flags                                       = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
     buildGeometryInfo.update                                      = VK_FALSE;
-    buildGeometryInfo.srcAccelerationStructure                    = nullptr;
+    buildGeometryInfo.srcAccelerationStructure                    = VK_NULL_HANDLE;
     buildGeometryInfo.dstAccelerationStructure                    = accelerationStructure.accelerationStructure;
     buildGeometryInfo.geometryArrayOfPointers                     = VK_FALSE;
     buildGeometryInfo.geometryCount                               = 1;
     buildGeometryInfo.ppGeometries                                = &pGeometry;
-    buildGeometryInfo.scratchData.deviceAddress                   = vkGetBufferDeviceAddress(device, &scratchBufferDeviceAddressInfo);
+    buildGeometryInfo.scratchData.deviceAddress                   = scratchBuffer.deviceAddress;
 
     VkAccelerationStructureBuildOffsetInfoKHR buildOffsetInfo   = {};
     buildOffsetInfo.primitiveCount                              = 1;
@@ -285,9 +280,6 @@ AccelerationStructure createTopAccelerationStructure(const VkDevice device, cons
 
     vkFreeMemory(device, scratchBuffer.memory, nullptr);
     vkDestroyBuffer(device, scratchBuffer.buffer, nullptr);
-
-    vkFreeMemory(device, instanceBuffer.memory, nullptr);
-    vkDestroyBuffer(device, instanceBuffer.buffer, nullptr);
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
     vkDestroyCommandPool(device, commandPool, nullptr);

@@ -20,13 +20,9 @@ struct RasterPushData {
 };
 
 struct RayTracePushData {
-    // Camera transformation
     mat4 cameraTransformationInverse;
 
-    // Perspective parameters for reverse z
-    float tanOfHalfFov;
-    float aspectRatio;
-    float oneOverNear;
+    mat4 inversePerspectiveTransformation;
 };
 
 #ifdef CPP_SHADER_STRUCTURE
