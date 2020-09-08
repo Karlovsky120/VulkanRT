@@ -42,7 +42,7 @@
 
 #define ACCELERATION_FACTOR 300.0f
 
-#define STAGING_BUFFER_SIZE 67'108'864 /// 64MB
+#define STAGING_BUFFER_SIZE 67'108'864 // 64MB
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define UI_UPDATE_PERIOD     500'000
@@ -401,8 +401,6 @@ VkPipeline createRayTracePipeline(const VkDevice device, const VkPipelineLayout 
     rayTracingShaderGroupCreateInfos[INDEX_MISS].type                    = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
     rayTracingShaderGroupCreateInfos[INDEX_MISS].generalShader           = INDEX_MISS;
 
-    VkPipelineLibraryCreateInfoKHR libraryCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR};
-
     VkRayTracingPipelineCreateInfoKHR createInfo = {VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR};
     createInfo.stageCount                        = static_cast<uint32_t>(shaderStagesCreateInfos.size());
     createInfo.pStages                           = shaderStagesCreateInfos.data();
@@ -410,7 +408,7 @@ VkPipeline createRayTracePipeline(const VkDevice device, const VkPipelineLayout 
     createInfo.pGroups                           = rayTracingShaderGroupCreateInfos.data();
     createInfo.maxRecursionDepth                 = 1;
     createInfo.layout                            = pipelineLayout;
-    createInfo.libraries                         = libraryCreateInfo;
+    createInfo.libraries                         = {VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR};
 
     VkPipeline pipeline = 0;
     VK_CHECK(vkCreateRayTracingPipelinesKHR(device, pipelineCache, 1, &createInfo, nullptr, &pipeline));
@@ -541,7 +539,7 @@ void recordRayTracingCommandBuffer(const VkCommandBuffer commandBuffer, const Vk
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 }
 
-void updateCameraAndPushData(GLFWwindow* window, Camera& camera, bool& rayTrace, RasterPushData& rasterPushData, RayTracePushData rayTracePushData,
+void updateCameraAndPushData(GLFWwindow* window, Camera& camera, bool& rayTrace, RasterPushData& rasterPushData, RayTracePushData& rayTracePushData,
                              const uint32_t frameTime) {
     double mouseXInput;
     double mouseYInput;
@@ -621,7 +619,6 @@ void updateCameraAndPushData(GLFWwindow* window, Camera& camera, bool& rayTrace,
     rasterPushData.cameraTransformation = glm::rotate(rasterPushData.cameraTransformation, static_cast<float>(camera.orientation.y), globalRight);
 
     rayTracePushData.cameraTransformationInverse = glm::inverse(rasterPushData.cameraTransformation);
-    rayTracePushData.inversePerspectiveTransformation = glm::transpose(glm::perspective(90.0f, 16 / 9.0f, 0.001f, 1000.0f));
 
     if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
         rayTrace = !rayTrace;
@@ -635,7 +632,7 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
                                       VkSurfaceCapabilitiesKHR& surfaceCapabilities, VkExtent2D& surfaceExtent,
                                       const VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties, const VkSurfaceFormatKHR surfaceFormat,
                                       const VkPresentModeKHR presentMode, uint32_t swapchainImageCount, const uint32_t graphicsQueueFamilyIndex,
-                                      float& oneOverAspectRatio/*, float& aspectRatio*/) {
+                                      float& oneOverAspectRatio) {
 
     int width  = 0;
     int height = 0;
@@ -664,7 +661,6 @@ void updateSurfaceDependantStructures(const VkDevice device, const VkPhysicalDev
     surfaceExtent = getSurfaceExtent(window, surfaceCapabilities);
 
     oneOverAspectRatio = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
-    //aspectRatio        = static_cast<float>(surfaceExtent.width) / static_cast<float>(surfaceExtent.height);
 
     VkSwapchainKHR newSwapchain =
         createSwapchain(device, surface, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex, surfaceExtent, swapchain);
@@ -1153,21 +1149,21 @@ int main(int, char*[]) {
     const VkDeviceSize   shaderHandleStorageSize = shaderGroupHandleSize * shaderGroupCount;
     std::vector<uint8_t> shaderHandleStorage(shaderHandleStorageSize);
     vkGetRayTracingShaderGroupHandlesKHR(device, rayTracePipeline, 0, shaderGroupCount, shaderHandleStorageSize, shaderHandleStorage.data());
-    uint8_t* shaderHandlesStoragePosition = shaderHandleStorage.data();
+    uint8_t* shaderHandlesStoragePtr = shaderHandleStorage.data();
 
     const VkDeviceSize   alignedShaderHandlesSize = baseGroupAlignment * shaderGroupCount;
     std::vector<uint8_t> alignedShaderHandles(alignedShaderHandlesSize);
-    uint8_t*             alignedShaderHandlesPosition = alignedShaderHandles.data();
+    uint8_t*             alignedShaderHandlesPtr = alignedShaderHandles.data();
 
     for (size_t i = 0; i < 3; ++i) {
-        memcpy(alignedShaderHandlesPosition, shaderHandlesStoragePosition, shaderGroupHandleSize);
-        shaderHandlesStoragePosition += shaderGroupHandleSize;
-        alignedShaderHandlesPosition += baseGroupAlignment;
+        memcpy(alignedShaderHandlesPtr, shaderHandlesStoragePtr, shaderGroupHandleSize);
+        shaderHandlesStoragePtr += shaderGroupHandleSize;
+        alignedShaderHandlesPtr += baseGroupAlignment;
     }
 
     Buffer shaderBindingTableBuffer = createBuffer(device, alignedShaderHandlesSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR,
                                                    physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    uploadToDeviceLocalBuffer(device, shaderHandleStorage, stagingBuffer.buffer, stagingBuffer.memory, shaderBindingTableBuffer.buffer, transferCommandPool,
+    uploadToDeviceLocalBuffer(device, alignedShaderHandles, stagingBuffer.buffer, stagingBuffer.memory, shaderBindingTableBuffer.buffer, transferCommandPool,
                               queue);
 
     vkFreeMemory(device, stagingBuffer.memory, nullptr);
@@ -1177,19 +1173,19 @@ int main(int, char*[]) {
     raygenStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
     raygenStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(baseGroupAlignment * INDEX_RAYGEN);
     raygenStridedBufferRegion.size                     = shaderGroupHandleSize;
-    raygenStridedBufferRegion.stride                   = baseGroupAlignment;
+    raygenStridedBufferRegion.stride                   = shaderGroupHandleSize;
 
     VkStridedBufferRegionKHR closestHitStridedBufferRegion = {};
     closestHitStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
     closestHitStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(baseGroupAlignment * INDEX_CLOSEST_HIT);
     closestHitStridedBufferRegion.size                     = shaderGroupHandleSize;
-    closestHitStridedBufferRegion.stride                   = baseGroupAlignment;
+    closestHitStridedBufferRegion.stride                   = shaderGroupHandleSize;
 
     VkStridedBufferRegionKHR missStridedBufferRegion = {};
     missStridedBufferRegion.buffer                   = shaderBindingTableBuffer.buffer;
     missStridedBufferRegion.offset                   = static_cast<VkDeviceSize>(baseGroupAlignment * INDEX_MISS);
     missStridedBufferRegion.size                     = shaderGroupHandleSize;
-    missStridedBufferRegion.stride                   = baseGroupAlignment;
+    missStridedBufferRegion.stride                   = shaderGroupHandleSize;
 
     VkStridedBufferRegionKHR callableStridedBufferRegion = {};
 
@@ -1233,10 +1229,8 @@ int main(int, char*[]) {
     rasterPushData.oneOverAspectRatio  = static_cast<float>(surfaceExtent.height) / static_cast<float>(surfaceExtent.width);
     rasterPushData.near                = NEAR;
 
-    RayTracePushData rayTracePushData = {};
-    //rayTracePushData.tanOfHalfFov     = tan(0.5f * FOV);
-    //rayTracePushData.aspectRatio      = static_cast<float>(surfaceExtent.width) / static_cast<float>(surfaceExtent.height);
-    //rayTracePushData.oneOverNear      = 1.0f / NEAR;
+    RayTracePushData rayTracePushData    = {};
+    rayTracePushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
 
     uint32_t currentFrame = 0;
     bool     rayTrace     = true;
@@ -1255,7 +1249,7 @@ int main(int, char*[]) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImages, swapchainImageViews, depthImageView,
                                              depthImage, depthImageMemory, renderPass, framebuffers, descriptorSets, surfaceCapabilities, surfaceExtent,
                                              physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex,
-                                             rasterPushData.oneOverAspectRatio/*, rayTracePushData.aspectRatio*/);
+                                             rasterPushData.oneOverAspectRatio);
 
             continue;
         } else if (acquireResult != VK_SUBOPTIMAL_KHR) {
@@ -1321,7 +1315,7 @@ int main(int, char*[]) {
             updateSurfaceDependantStructures(device, physicalDevice, window, surface, swapchain, swapchainImages, swapchainImageViews, depthImageView,
                                              depthImage, depthImageMemory, renderPass, framebuffers, descriptorSets, surfaceCapabilities, surfaceExtent,
                                              physicalDeviceMemoryProperties, surfaceFormat, presentMode, swapchainImageCount, graphicsQueueFamilyIndex,
-                                             rasterPushData.oneOverAspectRatio/*, rayTracePushData.aspectRatio*/);
+                                             rasterPushData.oneOverAspectRatio);
 
             continue;
         } else {

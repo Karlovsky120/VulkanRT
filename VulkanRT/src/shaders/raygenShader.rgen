@@ -16,30 +16,16 @@ layout(push_constant) uniform PushConstants {
 layout(location = 0) rayPayloadEXT vec3 hitValue;
 
 void main() {
-    //imageStore(targetImage, ivec2(gl_LaunchIDEXT.xy), vec4(0.0, 0.0, 0.2, 0.0));
+    vec2 pixelCenter = (vec2(gl_LaunchIDEXT.xy) + vec2(0.5)) * 2 - gl_LaunchSizeEXT.xy;
+    float z = -pc.pd.oneOverTanOfHalfFov * gl_LaunchSizeEXT.y;
 
-	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
-	vec2 d = inUV * 2.0 - 1.0;
+	vec4 origin = vec4(0,0,0,1) * pc.pd.cameraTransformationInverse;
+    vec4 direction = vec4(pixelCenter.x, pixelCenter.y, z, 1) * pc.pd.cameraTransformationInverse;
 
-	vec4 origin = pc.pd.cameraTransformationInverse * vec4(0,0,0,1);
-    vec4 target = pc.pd.inversePerspectiveTransformation * vec4(d.x, d.y, 1, 1);
-
-	/*vec4 target = vec4(d.x * pc.pd.tanOfHalfFov * pc.pd.aspectRatio,
-                       d.y * pc.pd.tanOfHalfFov,
-                       pc.pd.oneOverNear,
-                       -1);*/
-    
-	//vec4 direction = pc.pd.cameraTransformationInverse * vec4(normalize(target.xyz), 0);
-    vec4 direction = vec4(0.0, 0.0, 1.0, 1.0);
-
-	float tmin = 0.001;
+	float tmin = 0.0001;
 	float tmax = 1000.0;
 
-    //imageStore(targetImage, ivec2(gl_LaunchIDEXT.xy), target);
-    //return;
-
-    hitValue = vec3(0);
+    hitValue = vec3(0.0);
 
     traceRayEXT(
         accelerationStructure,
