@@ -33,6 +33,9 @@
     <ClCompile Include="src\commandPools.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\application.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="src\Shaders\fragmentShader.frag">
@@ -69,6 +72,9 @@
     </ClInclude>
     <ClInclude Include="src\shaders\sharedStructures.h">
       <Filter>Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="src\application.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

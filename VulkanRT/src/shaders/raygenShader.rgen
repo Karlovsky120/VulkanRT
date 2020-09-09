@@ -10,7 +10,7 @@ layout(binding = 2, set = 0) uniform accelerationStructureEXT accelerationStruct
 layout(binding = 3, set = 0, rgba8) uniform image2D targetImage;
 
 layout(push_constant) uniform PushConstants {
-	RayTracePushData pd;
+	RayTracingPushData pd;
 } pc;
 
 layout(location = 0) rayPayloadEXT vec3 hitValue;

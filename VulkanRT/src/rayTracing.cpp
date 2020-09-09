@@ -2,9 +2,7 @@
 
 #include "commandPools.h"
 
-#pragma warning(push, 0)
 #include <cassert>
-#pragma warning(pop)
 
 AccelerationStructure createBottomAccelerationStructure(const VkDevice device, const uint32_t vertexCount, const uint32_t primitiveCount,
                                                         const VkDeviceAddress vertexBufferAddress, const VkDeviceAddress indexBufferAddress,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+
 #include "resources.h"
 
 #pragma warning(push, 0)
@@ -9,10 +10,10 @@
 #pragma warning(pop)
 
 struct AccelerationStructure {
-    VkAccelerationStructureKHR accelerationStructure;
-    VkDeviceMemory             memory;
-    VkDeviceAddress            deviceAddress;
-    Buffer                     instanceBuffer;
+    VkAccelerationStructureKHR accelerationStructure = VK_NULL_HANDLE;
+    VkDeviceMemory             memory                = VK_NULL_HANDLE;
+    VkDeviceAddress            deviceAddress         = VK_NULL_HANDLE;
+    Buffer                     instanceBuffer        = {};
 };
 
 AccelerationStructure createBottomAccelerationStructure(const VkDevice device, const uint32_t vertexCount, const uint32_t primitiveCount,

@@ -1,9 +1,12 @@
 #include "swapchain.h"
 
 #pragma warning(push, 0)
+#define GLFW_INCLUDE_VULKAN
+#include "glfw3.h"
+#pragma warning(pop)
+
 #include <cassert>
 #include <stdexcept>
-#pragma warning(pop)
 
 bool surfaceFormatSupported(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface, const VkSurfaceFormatKHR& desiredSurfaceFormat) {
     uint32_t surfaceFormatsCount;

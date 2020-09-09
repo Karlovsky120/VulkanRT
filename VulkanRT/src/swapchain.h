@@ -5,12 +5,11 @@
 #pragma warning(push, 0)
 #define VK_ENABLE_BETA_EXTENSIONS
 #include "volk.h"
-
-#define GLFW_INCLUDE_VULKAN
-#include "glfw3.h"
+#pragma warning(pop)
 
 #include <vector>
-#pragma warning(pop)
+
+struct GLFWwindow;
 
 bool surfaceFormatSupported(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface, const VkSurfaceFormatKHR& desiredSurfaceFormat);
 

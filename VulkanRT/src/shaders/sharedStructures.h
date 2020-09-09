@@ -1,4 +1,6 @@
 #ifdef CPP_SHADER_STRUCTURE
+#pragma once
+
 #pragma warning(push, 0)
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_XYZW_ONLY
@@ -18,7 +20,7 @@ struct RasterPushData {
     float near;
 };
 
-struct RayTracePushData {
+struct RayTracingPushData {
     mat4 cameraTransformationInverse;
 
     float oneOverTanOfHalfFov;
