@@ -82,7 +82,7 @@ class Application {
     std::vector<VkSemaphore>     m_renderFinishedSemaphores;
     std::vector<VkSemaphore>     m_imageAvailableSemaphores;
 
-    uint32_t m_queueFamilyIndex = UINT32_MAX;
+    uint32_t m_queueFamilyIndex    = UINT32_MAX;
     uint32_t m_swapchainImageCount = UINT32_MAX;
 
     VkInstance                 createInstance() const;

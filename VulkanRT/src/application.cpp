@@ -15,6 +15,7 @@
 #include "glm/mat4x4.hpp"
 #pragma warning(pop)
 
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cstdio>
@@ -195,7 +196,7 @@ void Application::run() {
     deviceQueueCreateInfo.queueFamilyIndex        = m_queueFamilyIndex;
     deviceQueueCreateInfo.pQueuePriorities        = &queuePriorities;
 
-    std::vector<const char*> deviceExtensions = {
+    std::array<const char*, 4> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_RAY_TRACING_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, // Required for VK_KHR_ray_tracing
         VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME          // Required for VK_KHR_ray_tracing
@@ -255,7 +256,7 @@ void Application::run() {
 
     m_depthImageView = createImageView(m_device, m_depthImage, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
-    m_renderPass = createRenderPass();
+    m_renderPass   = createRenderPass();
     m_framebuffers = createFramebuffers();
 
     Buffer stagingBuffer =
@@ -306,7 +307,9 @@ void Application::run() {
     pipelineCacheCreateInfo.initialDataSize           = 0;
     VK_CHECK(vkCreatePipelineCache(m_device, &pipelineCacheCreateInfo, nullptr, &m_pipelineCache));
 
-    std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings(4);
+    std::array<VkDescriptorSetLayoutBinding, 4> descriptorSetLayoutBindings;
+    descriptorSetLayoutBindings.fill({});
+
     // Vertex buffer
     descriptorSetLayoutBindings[0].binding         = 0;
     descriptorSetLayoutBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -386,11 +389,11 @@ void Application::run() {
     vkDestroyShaderModule(m_device, raygenShader, nullptr);
 
     // clang-format off
-    std::vector<VkDescriptorPoolSize> descriptorPoolSizes = {
+    std::array<VkDescriptorPoolSize, 3> descriptorPoolSizes = {{
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},
         {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}
-    };
+    }};
     // clang-format on
 
     VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -410,7 +413,7 @@ void Application::run() {
     m_descriptorSets = std::vector<VkDescriptorSet>(m_swapchainImageCount);
     vkAllocateDescriptorSets(m_device, &descriptorSetAllocateInfo, m_descriptorSets.data());
 
-    std::vector<VkDescriptorBufferInfo> descriptorBufferInfos(2);
+    std::array<VkDescriptorBufferInfo, 2> descriptorBufferInfos;
     descriptorBufferInfos[0].buffer = m_vertexBuffer.buffer;
     descriptorBufferInfos[0].offset = 0;
     descriptorBufferInfos[0].range  = vertexBufferSize;
@@ -426,7 +429,9 @@ void Application::run() {
     VkDescriptorImageInfo descriptorSwapchainImageInfo = {};
     descriptorSwapchainImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
 
-    std::vector<VkWriteDescriptorSet> writeDescriptorSets(3, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
+    std::array<VkWriteDescriptorSet, 3> writeDescriptorSets;
+    writeDescriptorSets.fill({VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
+
     writeDescriptorSets[0].dstBinding      = 0; // 0 for vertex and 1 for index buffer
     writeDescriptorSets[0].dstArrayElement = 0;
     writeDescriptorSets[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -761,7 +766,9 @@ VkPhysicalDevice Application::pickPhysicalDevice() const {
 }
 
 VkRenderPass Application::createRenderPass() const {
-    std::vector<VkAttachmentDescription> attachments(2);
+    std::array<VkAttachmentDescription, 2> attachments;
+    attachments.fill({});
+
     attachments[0].format        = m_surfaceFormat.format;
     attachments[0].samples       = VK_SAMPLE_COUNT_1_BIT;
     attachments[0].loadOp        = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -818,9 +825,12 @@ std::vector<VkFramebuffer> Application::createFramebuffers() const {
     framebufferCreateInfo.layers                  = 1;
 
     std::vector<VkFramebuffer> framebuffers(m_swapchainImageCount);
+    std::array<VkImageView, 2> attachments({});
+    attachments[1] = m_depthImageView;
+
     for (size_t i = 0; i < m_swapchainImageCount; ++i) {
-        VkImageView attachments[2]         = {m_swapchainImageViews[i], m_depthImageView};
-        framebufferCreateInfo.pAttachments = attachments;
+        attachments[0]                     = m_swapchainImageViews[i];
+        framebufferCreateInfo.pAttachments = attachments.data();
         VK_CHECK(vkCreateFramebuffer(m_device, &framebufferCreateInfo, nullptr, &framebuffers[i]));
     }
 
@@ -857,7 +867,9 @@ VkShaderModule Application::loadShader(const char* pathToSource) const {
 VkPipeline Application::createRasterPipeline(const VkShaderModule& vertexShader, const VkShaderModule& fragmentShader) const {
     VkGraphicsPipelineCreateInfo createInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
 
-    std::vector<VkPipelineShaderStageCreateInfo> shaderStages(2, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO});
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+    shaderStages.fill({VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO});
+
     shaderStages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
     shaderStages[0].module = vertexShader;
     shaderStages[0].pName  = "main";
@@ -905,7 +917,7 @@ VkPipeline Application::createRasterPipeline(const VkShaderModule& vertexShader,
     colorBlendStateCreateInfo.pAttachments                        = &colorBlendAttachmentState;
     createInfo.pColorBlendState                                   = &colorBlendStateCreateInfo;
 
-    std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
     VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     dynamicStateCreateInfo.dynamicStateCount                = static_cast<uint32_t>(dynamicStates.size());
@@ -921,9 +933,10 @@ VkPipeline Application::createRasterPipeline(const VkShaderModule& vertexShader,
     return pipeline;
 }
 
-VkPipeline Application::createRayTracingPipeline(const VkShaderModule& raygenShaderModule,
-                                                 const VkShaderModule& closestHitShaderModule, const VkShaderModule& missShaderModule) const {
-    std::vector<VkPipelineShaderStageCreateInfo> shaderStagesCreateInfos(3, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO});
+VkPipeline Application::createRayTracingPipeline(const VkShaderModule& raygenShaderModule, const VkShaderModule& closestHitShaderModule,
+                                                 const VkShaderModule& missShaderModule) const {
+    std::array<VkPipelineShaderStageCreateInfo, 3> shaderStagesCreateInfos;
+    shaderStagesCreateInfos.fill({VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO});
     shaderStagesCreateInfos[INDEX_RAYGEN].stage  = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
     shaderStagesCreateInfos[INDEX_RAYGEN].module = raygenShaderModule;
     shaderStagesCreateInfos[INDEX_RAYGEN].pName  = "main";
@@ -936,7 +949,9 @@ VkPipeline Application::createRayTracingPipeline(const VkShaderModule& raygenSha
     shaderStagesCreateInfos[INDEX_MISS].module = missShaderModule;
     shaderStagesCreateInfos[INDEX_MISS].pName  = "main";
 
-    std::vector<VkRayTracingShaderGroupCreateInfoKHR> rayTracingShaderGroupCreateInfos(3, {VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR});
+    std::array<VkRayTracingShaderGroupCreateInfoKHR, 3> rayTracingShaderGroupCreateInfos;
+    rayTracingShaderGroupCreateInfos.fill({VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR});
+
     for (VkRayTracingShaderGroupCreateInfoKHR& rayTracingShaderGroupCreateInfo : rayTracingShaderGroupCreateInfos) {
         rayTracingShaderGroupCreateInfo.generalShader      = VK_SHADER_UNUSED_KHR;
         rayTracingShaderGroupCreateInfo.closestHitShader   = VK_SHADER_UNUSED_KHR;
@@ -991,12 +1006,12 @@ void Application::recordRasterCommandBuffer(const uint32_t& frameIndex, const ui
     renderPassBeginInfo.renderArea.offset     = {0, 0};
     renderPassBeginInfo.renderArea.extent     = m_surfaceExtent;
 
-    VkClearValue              colorImageClearColor = {0.0f, 0.0f, 0.2f, 1.0f};
-    VkClearValue              depthImageClearColor = {0.0f, 0.0f, 0.0f, 0.0f};
-    std::vector<VkClearValue> imageClearColors     = {colorImageClearColor, depthImageClearColor};
-    renderPassBeginInfo.clearValueCount            = static_cast<uint32_t>(imageClearColors.size());
-    renderPassBeginInfo.pClearValues               = imageClearColors.data();
-    renderPassBeginInfo.framebuffer                = m_framebuffers[frameIndex];
+    VkClearValue                colorImageClearColor = {0.0f, 0.0f, 0.2f, 1.0f};
+    VkClearValue                depthImageClearColor = {0.0f, 0.0f, 0.0f, 0.0f};
+    std::array<VkClearValue, 2> imageClearColors     = {colorImageClearColor, depthImageClearColor};
+    renderPassBeginInfo.clearValueCount              = static_cast<uint32_t>(imageClearColors.size());
+    renderPassBeginInfo.pClearValues                 = imageClearColors.data();
+    renderPassBeginInfo.framebuffer                  = m_framebuffers[frameIndex];
     vkCmdBeginRenderPass(m_commandBuffers[frameIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdPushConstants(m_commandBuffers[frameIndex], m_rasterPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RasterPushData), &m_rasterPushData);
