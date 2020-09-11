@@ -1172,13 +1172,12 @@ void Application::updateSurfaceDependantStructures(const uint32_t& graphicsQueue
 
     m_rasterPushData.oneOverAspectRatio = static_cast<float>(m_surfaceExtent.height) / static_cast<float>(m_surfaceExtent.width);
 
-    uint32_t       swapchainImageCount = UINT32_MAX;
     VkSwapchainKHR newSwapchain =
-        createSwapchain(m_device, m_surface, m_surfaceFormat, m_presentMode, swapchainImageCount, graphicsQueueFamilyIndex, m_surfaceExtent, m_swapchain);
+        createSwapchain(m_device, m_surface, m_surfaceFormat, m_presentMode, m_swapchainImageCount, graphicsQueueFamilyIndex, m_surfaceExtent, m_swapchain);
     vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
     m_swapchain = newSwapchain;
 
-    vkGetSwapchainImagesKHR(m_device, m_swapchain, &swapchainImageCount, m_swapchainImages.data());
+    vkGetSwapchainImagesKHR(m_device, m_swapchain, &m_swapchainImageCount, m_swapchainImages.data());
     m_swapchainImageViews = getSwapchainImageViews(m_device, m_swapchainImages, m_surfaceFormat.format);
 
     VkDescriptorImageInfo descriptorSwapchainImageInfo = {};
@@ -1191,7 +1190,7 @@ void Application::updateSurfaceDependantStructures(const uint32_t& graphicsQueue
     writeDescriptorSet.descriptorCount      = 1;
     writeDescriptorSet.pImageInfo           = &descriptorSwapchainImageInfo;
 
-    for (size_t i = 0; i < swapchainImageCount; ++i) {
+    for (size_t i = 0; i < m_swapchainImageCount; ++i) {
         descriptorSwapchainImageInfo.imageView = m_swapchainImageViews[i];
         writeDescriptorSet.dstSet              = m_descriptorSets[i];
 
