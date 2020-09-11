@@ -618,16 +618,14 @@ void Application::run() {
 
         updateCameraAndPushData(frameTime);
 
-        VkPipelineStageFlags waitStage;
-
         if (rayTracing) {
             recordRayTracingCommandBuffer(imageIndex, raygenStridedBufferRegion, closestHitStridedBufferRegion, missStridedBufferRegion,
                                           callableStridedBufferRegion);
-            waitStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
         } else {
             recordRasterCommandBuffer(imageIndex, static_cast<uint32_t>(cubeIndices.size()));
-            waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         }
+
+        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 
         VkSubmitInfo submitInfo         = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
         submitInfo.waitSemaphoreCount   = 1;
@@ -822,21 +820,11 @@ VkRenderPass Application::createRenderPass() const {
     subpass.pColorAttachments       = &colorRef;
     subpass.pDepthStencilAttachment = &depthRef;
 
-    VkSubpassDependency subpassDependency = {};
-    subpassDependency.srcSubpass          = VK_SUBPASS_EXTERNAL;
-    subpassDependency.dstSubpass          = 0;
-    subpassDependency.srcStageMask        = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDependency.dstStageMask        = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDependency.srcAccessMask       = 0;
-    subpassDependency.dstAccessMask       = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
     VkRenderPassCreateInfo renderPassCreateInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
     renderPassCreateInfo.attachmentCount        = static_cast<uint32_t>(attachments.size());
     renderPassCreateInfo.pAttachments           = attachments.data();
     renderPassCreateInfo.subpassCount           = 1;
     renderPassCreateInfo.pSubpasses             = &subpass;
-    renderPassCreateInfo.dependencyCount        = 1;
-    renderPassCreateInfo.pDependencies          = &subpassDependency;
 
     VkRenderPass renderPass = 0;
     VK_CHECK(vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &renderPass));
