@@ -3,7 +3,6 @@
 #include "commandPools.h"
 
 #include <array>
-#include <cassert>
 
 AccelerationStructure createBottomAccelerationStructure(const VkDevice device, const uint32_t vertexCount, const uint32_t primitiveCount,
                                                         const VkDeviceAddress vertexBufferAddress, const VkDeviceAddress indexBufferAddress,

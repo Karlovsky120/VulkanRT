@@ -5,7 +5,6 @@
 #include "glfw3.h"
 #pragma warning(pop)
 
-#include <cassert>
 #include <stdexcept>
 
 bool surfaceFormatSupported(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface, const VkSurfaceFormatKHR& desiredSurfaceFormat) {

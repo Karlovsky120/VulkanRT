@@ -1,7 +1,5 @@
 #include "commandPools.h"
 
-#include <cassert>
-
 VkCommandPool createCommandPool(const VkDevice device, const uint32_t queueFamilyIndex) {
     VkCommandPoolCreateInfo commandPoolCreateInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;

@@ -7,7 +7,6 @@
 #include "volk.h"
 #pragma warning(pop)
 
-#include <cassert>
 #include <vector>
 
 struct Buffer {
