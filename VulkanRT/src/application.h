@@ -17,7 +17,15 @@
 #include "glm/vec3.hpp"
 #pragma warning(pop)
 
+#include <map>
+#include <vector>
+
 struct GLFWwindow;
+
+struct KeyState {
+    bool    pressed     = false;
+    uint8_t transitions = 0;
+};
 
 struct Camera {
     glm::vec2 orientation = glm::vec2();
@@ -28,6 +36,8 @@ struct Camera {
 class Application {
   public:
     void run();
+
+    std::map<int, KeyState> m_keyStates;
 
     ~Application();
 
@@ -96,7 +106,7 @@ class Application {
     void                       recordRayTracingCommandBuffer(const uint32_t& frameIndex, const VkStridedBufferRegionKHR& raygenStridedBufferRegion,
                                                              const VkStridedBufferRegionKHR& closestHitStridedBufferRegion, const VkStridedBufferRegionKHR& missStridedBufferRegion,
                                                              const VkStridedBufferRegionKHR& callableBufferRegion) const;
-    void                       updateCameraAndPushData(const uint32_t& frameTime, bool& rayTracing);
+    void                       updateCameraAndPushData(const uint32_t& frameTime);
     void                       updateSurfaceDependantStructures(const uint32_t& graphicsQueueFamilyIndex);
 
     static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,

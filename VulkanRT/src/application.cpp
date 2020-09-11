@@ -19,7 +19,6 @@
 #include <chrono>
 #include <cstdio>
 #include <stdexcept>
-#include <vector>
 
 #define API_DUMP 0
 #define VERBOSE  0
@@ -123,6 +122,19 @@ Application::~Application() {
     glfwTerminate();
 }
 
+void key_callback(GLFWwindow* window, int key, int /*scancode*/, int action, int /*mods*/) {
+    Application* application = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+    KeyState&        keyState  = application->m_keyStates[key];
+
+    if (action == GLFW_PRESS) {
+        keyState.pressed = true;
+        ++keyState.transitions;
+    } else if (action == GLFW_RELEASE) {
+        keyState.pressed = false;
+        ++keyState.transitions;
+    }
+}
+
 void Application::run() {
     if (!glfwInit()) {
         throw std::runtime_error("Failed to initialize GLFW!");
@@ -134,11 +146,14 @@ void Application::run() {
         throw std::runtime_error("Failed to create GLFW window!");
     }
 
+    glfwSetWindowUserPointer(window, this);
+
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     if (!glfwRawMouseMotionSupported()) {
         throw std::runtime_error("Raw mouse motion not supported!");
     }
 
+    glfwSetKeyCallback(window, key_callback);
     glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     glfwSetCursorPos(window, 0, 0);
 
@@ -148,6 +163,14 @@ void Application::run() {
 
     m_instance = createInstance();
     volkLoadInstance(m_instance);
+
+    m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_W, {}));
+    m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_A, {}));
+    m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_S, {}));
+    m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_D, {}));
+    m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_SPACE, {}));
+    m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_RIGHT_CONTROL, {}));
+    m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_P, {}));
 
 #ifdef _DEBUG
     VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfo = {VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
@@ -587,7 +610,13 @@ void Application::run() {
             time = 0;
         }
 
-        updateCameraAndPushData(frameTime, rayTracing);
+        if (m_keyStates[GLFW_KEY_P].pressed && m_keyStates[GLFW_KEY_P].transitions % 2 == 1) {
+            rayTracing = !rayTracing;
+        }
+
+        m_keyStates[GLFW_KEY_P].transitions = 0;
+
+        updateCameraAndPushData(frameTime);
 
         VkPipelineStageFlags waitStage;
 
@@ -1056,7 +1085,7 @@ void Application::recordRayTracingCommandBuffer(const uint32_t& frameIndex, cons
     VK_CHECK(vkEndCommandBuffer(m_commandBuffers[frameIndex]));
 }
 
-void Application::updateCameraAndPushData(const uint32_t& frameTime, bool& rayTracing) {
+void Application::updateCameraAndPushData(const uint32_t& frameTime) {
     double mouseXInput;
     double mouseYInput;
 
@@ -1093,27 +1122,27 @@ void Application::updateCameraAndPushData(const uint32_t& frameTime, bool& rayTr
 
     glm::vec3 deltaPosition = glm::vec3();
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+    if (m_keyStates[GLFW_KEY_W].pressed) {
         deltaPosition += forward;
     }
 
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+    if (m_keyStates[GLFW_KEY_S].pressed) {
         deltaPosition -= forward;
     }
 
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+    if (m_keyStates[GLFW_KEY_A].pressed) {
         deltaPosition -= right;
     }
 
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+    if (m_keyStates[GLFW_KEY_D].pressed) {
         deltaPosition += right;
     }
 
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+    if (m_keyStates[GLFW_KEY_SPACE].pressed) {
         deltaPosition += globalUp;
     }
 
-    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
+    if (m_keyStates[GLFW_KEY_LEFT_CONTROL].pressed) {
         deltaPosition -= globalUp;
     }
 
@@ -1135,10 +1164,6 @@ void Application::updateCameraAndPushData(const uint32_t& frameTime, bool& rayTr
     m_rasterPushData.cameraTransformation = glm::rotate(m_rasterPushData.cameraTransformation, static_cast<float>(m_camera.orientation.y), globalRight);
 
     m_rayTracingPushData.cameraTransformationInverse = glm::inverse(m_rasterPushData.cameraTransformation);
-
-    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
-        rayTracing = !rayTracing;
-    }
 }
 
 void Application::updateSurfaceDependantStructures(const uint32_t& graphicsQueueFamilyIndex) {
