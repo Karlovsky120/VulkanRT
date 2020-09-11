@@ -6,8 +6,6 @@
 #include "resources.h"
 #include "sharedStructures.h"
 
-#include "common.h"
-
 #pragma warning(push, 0)
 #define VK_ENABLE_BETA_EXTENSIONS
 #include "volk.h"
