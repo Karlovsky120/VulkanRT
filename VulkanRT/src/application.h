@@ -5,6 +5,7 @@
 #include "rayTracing.h"
 #include "resources.h"
 #include "sharedStructures.h"
+#include "swapchain.h"
 
 #pragma warning(push, 0)
 #define VK_ENABLE_BETA_EXTENSIONS
@@ -18,6 +19,7 @@
 #pragma warning(pop)
 
 #include <map>
+#include <memory>
 #include <vector>
 
 struct GLFWwindow;
@@ -49,7 +51,6 @@ class Application {
     VkSurfaceKHR             m_surface                  = VK_NULL_HANDLE;
     VkPhysicalDevice         m_physicalDevice           = VK_NULL_HANDLE;
     VkDevice                 m_device                   = VK_NULL_HANDLE;
-    VkSwapchainKHR           m_swapchain                = VK_NULL_HANDLE;
     VkRenderPass             m_renderPass               = VK_NULL_HANDLE;
     VkDeviceMemory           m_depthImageMemory         = VK_NULL_HANDLE;
     VkImageView              m_depthImageView           = VK_NULL_HANDLE;
@@ -65,10 +66,8 @@ class Application {
 
     VkExtent2D                       m_surfaceExtent                  = {};
     VkPhysicalDeviceMemoryProperties m_physicalDeviceMemoryProperties = {};
-    VkSurfaceCapabilitiesKHR         m_surfaceCapabilities            = {};
 
-    VkSurfaceFormatKHR m_surfaceFormat;
-    VkPresentModeKHR   m_presentMode;
+    std::unique_ptr<Swapchain> m_swapchain;
 
     Buffer                m_vertexBuffer                     = {};
     Buffer                m_indexBuffer                      = {};
@@ -80,8 +79,6 @@ class Application {
     RasterPushData     m_rasterPushData     = {};
     RayTracingPushData m_rayTracingPushData = {};
 
-    std::vector<VkImage>         m_swapchainImages;
-    std::vector<VkImageView>     m_swapchainImageViews;
     std::vector<VkFramebuffer>   m_framebuffers;
     std::vector<VkDescriptorSet> m_descriptorSets;
     std::vector<VkCommandPool>   m_commandPools;
@@ -93,21 +90,21 @@ class Application {
     uint32_t m_queueFamilyIndex    = UINT32_MAX;
     uint32_t m_swapchainImageCount = UINT32_MAX;
 
-    VkInstance                 createInstance() const;
-    uint32_t                   getGraphicsQueueFamilyIndex(const VkPhysicalDevice& physicalDevice) const;
-    VkPhysicalDevice           pickPhysicalDevice() const;
-    VkRenderPass               createRenderPass() const;
-    std::vector<VkFramebuffer> createFramebuffers() const;
-    VkShaderModule             loadShader(const char* pathToSource) const;
-    VkPipeline                 createRasterPipeline(const VkShaderModule& vertexShader, const VkShaderModule& fragmentShader) const;
-    VkPipeline                 createRayTracingPipeline(const VkShaderModule& raygenShaderModule, const VkShaderModule& closestHitShaderModule,
-                                                        const VkShaderModule& missShaderModule) const;
-    void                       recordRasterCommandBuffer(const uint32_t& frameIndex, const uint32_t& indexCount) const;
-    void                       recordRayTracingCommandBuffer(const uint32_t& frameIndex, const VkStridedBufferRegionKHR& raygenStridedBufferRegion,
-                                                             const VkStridedBufferRegionKHR& closestHitStridedBufferRegion, const VkStridedBufferRegionKHR& missStridedBufferRegion,
-                                                             const VkStridedBufferRegionKHR& callableBufferRegion) const;
-    void                       updateCameraAndPushData(const uint32_t& frameTime);
-    void                       updateSurfaceDependantStructures(const uint32_t& graphicsQueueFamilyIndex);
+    const VkInstance                 createInstance() const;
+    const uint32_t                   getGraphicsQueueFamilyIndex(const VkPhysicalDevice& physicalDevice) const;
+    const VkPhysicalDevice           pickPhysicalDevice() const;
+    const VkRenderPass               createRenderPass() const;
+    const std::vector<VkFramebuffer> createFramebuffers() const;
+    const VkShaderModule             loadShader(const char* pathToSource) const;
+    const VkPipeline                 createRasterPipeline(const VkShaderModule& vertexShader, const VkShaderModule& fragmentShader) const;
+    const VkPipeline                 createRayTracingPipeline(const VkShaderModule& raygenShaderModule, const VkShaderModule& closestHitShaderModule,
+                                                              const VkShaderModule& missShaderModule) const;
+    void                             recordRasterCommandBuffer(const uint32_t& frameIndex, const uint32_t& indexCount) const;
+    void                             recordRayTracingCommandBuffer(const uint32_t& frameIndex, const VkStridedBufferRegionKHR& raygenStridedBufferRegion,
+                                                                   const VkStridedBufferRegionKHR& closestHitStridedBufferRegion, const VkStridedBufferRegionKHR& missStridedBufferRegion,
+                                                                   const VkStridedBufferRegionKHR& callableBufferRegion) const;
+    void                             updateCameraAndPushData(const uint32_t& frameTime);
+    void                             updateSurfaceDependantStructures();
 
     static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* /*pUserData*/);

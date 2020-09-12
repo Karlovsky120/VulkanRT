@@ -11,16 +11,47 @@
 
 struct GLFWwindow;
 
-bool surfaceFormatSupported(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface, const VkSurfaceFormatKHR& desiredSurfaceFormat);
+class Swapchain {
+  public:
+    VkExtent2D update();
 
-VkExtent2D getSurfaceExtent(GLFWwindow* window, const VkSurfaceCapabilitiesKHR surfaceCapabilities);
+    Swapchain(GLFWwindow* window, const VkSurfaceKHR& surface, const VkPhysicalDevice& physicalDevice, const VkDevice& device,
+              const uint32_t& queueFamilyIndex, const VkSurfaceFormatKHR& surfaceFormat);
 
-VkPresentModeKHR getPresentMode(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface);
+    ~Swapchain();
 
-uint32_t getSwapchainImageCount(const VkSurfaceCapabilitiesKHR surfaceCapabilities);
+    const VkExtent2D&               getSurfaceExtent() const;
+    const VkSurfaceFormatKHR&       getSurfaceFormat() const;
+    const VkSwapchainKHR&           get() const;
+    const std::vector<VkImage>&     getImages() const;
+    const std::vector<VkImageView>& getImageViews() const;
+    const uint32_t&                 getImageCounts() const;
 
-VkSwapchainKHR createSwapchain(const VkDevice device, const VkSurfaceKHR surface, const VkSurfaceFormatKHR surfaceFormat, const VkPresentModeKHR presentMode,
-                               const uint32_t imageCount, const uint32_t graphicsQueueFamilyIndex, const VkExtent2D imageExtent,
-                               const VkSwapchainKHR oldSwapchain);
+  private:
+    GLFWwindow* m_window = nullptr;
 
-std::vector<VkImageView> getSwapchainImageViews(const VkDevice device, std::vector<VkImage>& swapchainImages, const VkFormat surfaceFormat);
+    const VkPhysicalDevice m_physicalDevice;
+    const VkDevice         m_device;
+    const VkSurfaceKHR     m_surface;
+    VkSwapchainKHR         m_swapchain = VK_NULL_HANDLE;
+
+    VkSwapchainCreateInfoKHR m_swapchainCreateInfo          = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+    VkImageViewCreateInfo    m_swapchainImageViewCreateInfo = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    const VkSurfaceFormatKHR m_surfaceFormat;
+    VkExtent2D               m_surfaceExtent;
+
+    uint32_t m_swapchainImageCount = UINT32_MAX;
+
+    std::vector<VkImage>     m_swapchainImages;
+    std::vector<VkImageView> m_swapchainImageViews;
+
+    const bool surfaceFormatSupported() const;
+
+    void setSwapchainImageCount(const VkSurfaceCapabilitiesKHR& surfaceCapabilities);
+    void setSurfaceExtent(const VkSurfaceCapabilitiesKHR& surfaceCapabilities);
+
+    const VkPresentModeKHR getPresentMode() const;
+
+    void createSwapchain(const uint32_t& queueFamilyIndex);
+    void createSwapchainImageViews();
+};

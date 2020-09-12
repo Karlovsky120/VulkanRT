@@ -2,7 +2,6 @@
 #include "application.h"
 
 #include "commandPools.h"
-#include "swapchain.h"
 
 #pragma warning(push, 0)
 #define GLFW_INCLUDE_VULKAN
@@ -35,8 +34,8 @@
 
 #define STAGING_BUFFER_SIZE 67'108'864 // 64MB
 
-#define MAX_FRAMES_IN_FLIGHT 2
-#define UI_UPDATE_PERIOD     500'000 // 0.5 seconds
+#define MAX_FRAMES_IN_FLIGHT    2
+#define FRAMERATE_UPDATE_PERIOD 500'000 // 0.5 seconds
 
 #define INDEX_RAYGEN      0
 #define INDEX_CLOSEST_HIT 1
@@ -104,10 +103,7 @@ Application::~Application() {
 
     vkDestroyRenderPass(m_device, m_renderPass, nullptr);
 
-    for (VkImageView& imageView : m_swapchainImageViews) {
-        vkDestroyImageView(m_device, imageView, nullptr);
-    }
-    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+    m_swapchain.reset();
 
     vkDestroyDevice(m_device, nullptr);
 
@@ -124,7 +120,7 @@ Application::~Application() {
 
 void key_callback(GLFWwindow* window, int key, int /*scancode*/, int action, int /*mods*/) {
     Application* application = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
-    KeyState&        keyState  = application->m_keyStates[key];
+    KeyState&    keyState    = application->m_keyStates[key];
 
     if (action == GLFW_PRESS) {
         keyState.pressed = true;
@@ -188,18 +184,9 @@ void Application::run() {
     VK_CHECK(vkCreateDebugUtilsMessengerEXT(m_instance, &debugUtilsMessengerCreateInfo, nullptr, &m_debugUtilsMessenger));
 #endif
 
-    if (glfwCreateWindowSurface(m_instance, window, nullptr, &m_surface) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create window surface!");
-    }
+    VK_CHECK(glfwCreateWindowSurface(m_instance, window, nullptr, &m_surface));
 
     m_physicalDevice = pickPhysicalDevice();
-
-    m_surfaceFormat.format     = VK_FORMAT_B8G8R8A8_UNORM;
-    m_surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-
-    if (!surfaceFormatSupported(m_physicalDevice, m_surface, m_surfaceFormat)) {
-        throw std::runtime_error("Requested surface format not supported!");
-    }
 
     VkPhysicalDeviceRayTracingPropertiesKHR physicalDeviceRayTracingProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PROPERTIES_KHR};
     VkPhysicalDeviceProperties2             physicalDeviceProperties2          = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
@@ -250,20 +237,13 @@ void Application::run() {
     VkQueue queue = 0;
     vkGetDeviceQueue(m_device, m_queueFamilyIndex, 0, &queue);
 
-    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &m_surfaceCapabilities));
+    VkSurfaceFormatKHR surfaceFormat = {};
+    surfaceFormat.format             = VK_FORMAT_B8G8R8A8_UNORM;
+    surfaceFormat.colorSpace         = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 
-    m_swapchainImageCount = getSwapchainImageCount(m_surfaceCapabilities);
-
-    m_surfaceExtent = getSurfaceExtent(window, m_surfaceCapabilities);
-
-    m_presentMode = getPresentMode(m_physicalDevice, m_surface);
-    m_swapchain =
-        createSwapchain(m_device, m_surface, m_surfaceFormat, m_presentMode, m_swapchainImageCount, m_queueFamilyIndex, m_surfaceExtent, VK_NULL_HANDLE);
-
-    m_swapchainImages = std::vector<VkImage>(m_swapchainImageCount);
-    VK_CHECK(vkGetSwapchainImagesKHR(m_device, m_swapchain, &m_swapchainImageCount, m_swapchainImages.data()));
-
-    m_swapchainImageViews = getSwapchainImageViews(m_device, m_swapchainImages, m_surfaceFormat.format);
+    m_swapchain           = std::make_unique<Swapchain>(window, m_surface, m_physicalDevice, m_device, m_queueFamilyIndex, surfaceFormat);
+    m_surfaceExtent       = m_swapchain->getSurfaceExtent();
+    m_swapchainImageCount = m_swapchain->getImageCounts();
 
     m_physicalDeviceMemoryProperties;
     vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &m_physicalDeviceMemoryProperties);
@@ -472,8 +452,9 @@ void Application::run() {
     writeDescriptorSets[2].descriptorCount = 1;
     writeDescriptorSets[2].pImageInfo      = &descriptorSwapchainImageInfo;
 
+    const std::vector<VkImageView>& swapchainImageViews = m_swapchain->getImageViews();
     for (size_t i = 0; i < m_swapchainImageCount; ++i) {
-        descriptorSwapchainImageInfo.imageView = m_swapchainImageViews[i];
+        descriptorSwapchainImageInfo.imageView = swapchainImageViews[i];
 
         writeDescriptorSets[0].dstSet = m_descriptorSets[i];
         writeDescriptorSets[1].dstSet = m_descriptorSets[i];
@@ -572,6 +553,7 @@ void Application::run() {
 
     uint32_t currentFrame = 0;
     bool     rayTracing   = true;
+    bool     updatedUI    = false;
 
     std::chrono::high_resolution_clock::time_point oldTime = std::chrono::high_resolution_clock::now();
     uint32_t                                       time    = 0;
@@ -583,9 +565,9 @@ void Application::run() {
 
         uint32_t imageIndex;
         VkResult acquireResult =
-            vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+            vkAcquireNextImageKHR(m_device, m_swapchain->get(), UINT64_MAX, m_imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
-            updateSurfaceDependantStructures(m_queueFamilyIndex);
+            updateSurfaceDependantStructures();
             continue;
         } else if (acquireResult != VK_SUBOPTIMAL_KHR) {
             VK_CHECK(acquireResult);
@@ -603,15 +585,17 @@ void Application::run() {
         oldTime            = newTime;
         time += frameTime;
 
-        if (time > UI_UPDATE_PERIOD) {
-            char title[256];
-            sprintf_s(title, "Frametime: %.2fms", frameTime / 1'000.0f);
-            glfwSetWindowTitle(window, title);
-            time = 0;
-        }
-
         if (m_keyStates[GLFW_KEY_P].pressed && m_keyStates[GLFW_KEY_P].transitions % 2 == 1) {
             rayTracing = !rayTracing;
+            updatedUI  = true;
+        }
+
+        if (time > FRAMERATE_UPDATE_PERIOD || updatedUI) {
+            char title[256];
+            sprintf_s(title, "Frametime: %.2fms, RTX %s", frameTime / 1'000.0f, rayTracing ? "ON" : "OFF");
+            glfwSetWindowTitle(window, title);
+            time      = 0;
+            updatedUI = false;
         }
 
         m_keyStates[GLFW_KEY_P].transitions = 0;
@@ -640,16 +624,18 @@ void Application::run() {
 
         VK_CHECK(vkQueueSubmit(queue, 1, &submitInfo, m_inFlightFences[currentFrame]));
 
+        const VkSwapchainKHR& swapchain = m_swapchain->get();
+
         VkPresentInfoKHR presentInfo   = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores    = &m_renderFinishedSemaphores[currentFrame];
         presentInfo.swapchainCount     = 1;
-        presentInfo.pSwapchains        = &m_swapchain;
+        presentInfo.pSwapchains        = &swapchain;
         presentInfo.pImageIndices      = &imageIndex;
 
         VkResult presentResult = vkQueuePresentKHR(queue, &presentInfo);
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-            updateSurfaceDependantStructures(m_queueFamilyIndex);
+            updateSurfaceDependantStructures();
             continue;
         } else {
             VK_CHECK(presentResult);
@@ -659,7 +645,7 @@ void Application::run() {
     }
 }
 
-VkInstance Application::createInstance() const {
+const VkInstance Application::createInstance() const {
     VkApplicationInfo applicationInfo  = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
     applicationInfo.apiVersion         = VK_API_VERSION_1_2;
     applicationInfo.applicationVersion = 0;
@@ -702,7 +688,7 @@ VkInstance Application::createInstance() const {
     return instance;
 }
 
-uint32_t Application::getGraphicsQueueFamilyIndex(const VkPhysicalDevice& physicalDevice) const {
+const uint32_t Application::getGraphicsQueueFamilyIndex(const VkPhysicalDevice& physicalDevice) const {
     uint32_t queueFamilyCount;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, 0);
 
@@ -721,7 +707,7 @@ uint32_t Application::getGraphicsQueueFamilyIndex(const VkPhysicalDevice& physic
     return queueFamilyIndex;
 }
 
-VkPhysicalDevice Application::pickPhysicalDevice() const {
+const VkPhysicalDevice Application::pickPhysicalDevice() const {
     uint32_t physicalDeviceCount;
     VK_CHECK(vkEnumeratePhysicalDevices(m_instance, &physicalDeviceCount, 0));
 
@@ -791,11 +777,11 @@ VkPhysicalDevice Application::pickPhysicalDevice() const {
     throw std::runtime_error("No suitable GPU found!");
 }
 
-VkRenderPass Application::createRenderPass() const {
+const VkRenderPass Application::createRenderPass() const {
     std::array<VkAttachmentDescription, 2> attachments;
     attachments.fill({});
 
-    attachments[0].format        = m_surfaceFormat.format;
+    attachments[0].format        = m_swapchain->getSurfaceFormat().format;
     attachments[0].samples       = VK_SAMPLE_COUNT_1_BIT;
     attachments[0].loadOp        = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachments[0].storeOp       = VK_ATTACHMENT_STORE_OP_STORE;
@@ -832,7 +818,7 @@ VkRenderPass Application::createRenderPass() const {
     return renderPass;
 }
 
-std::vector<VkFramebuffer> Application::createFramebuffers() const {
+const std::vector<VkFramebuffer> Application::createFramebuffers() const {
     VkFramebufferCreateInfo framebufferCreateInfo = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
     framebufferCreateInfo.renderPass              = m_renderPass;
     framebufferCreateInfo.attachmentCount         = 2;
@@ -844,8 +830,9 @@ std::vector<VkFramebuffer> Application::createFramebuffers() const {
     std::array<VkImageView, 2> attachments({});
     attachments[1] = m_depthImageView;
 
+    const std::vector<VkImageView>& swapchainImageViews = m_swapchain->getImageViews();
     for (size_t i = 0; i < m_swapchainImageCount; ++i) {
-        attachments[0]                     = m_swapchainImageViews[i];
+        attachments[0]                     = swapchainImageViews[i];
         framebufferCreateInfo.pAttachments = attachments.data();
         VK_CHECK(vkCreateFramebuffer(m_device, &framebufferCreateInfo, nullptr, &framebuffers[i]));
     }
@@ -853,7 +840,7 @@ std::vector<VkFramebuffer> Application::createFramebuffers() const {
     return framebuffers;
 }
 
-VkShaderModule Application::loadShader(const char* pathToSource) const {
+const VkShaderModule Application::loadShader(const char* pathToSource) const {
     FILE* source;
     fopen_s(&source, pathToSource, "rb");
     assert(source);
@@ -880,7 +867,7 @@ VkShaderModule Application::loadShader(const char* pathToSource) const {
     return shaderModule;
 }
 
-VkPipeline Application::createRasterPipeline(const VkShaderModule& vertexShader, const VkShaderModule& fragmentShader) const {
+const VkPipeline Application::createRasterPipeline(const VkShaderModule& vertexShader, const VkShaderModule& fragmentShader) const {
     VkGraphicsPipelineCreateInfo createInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
 
     std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
@@ -949,8 +936,8 @@ VkPipeline Application::createRasterPipeline(const VkShaderModule& vertexShader,
     return pipeline;
 }
 
-VkPipeline Application::createRayTracingPipeline(const VkShaderModule& raygenShaderModule, const VkShaderModule& closestHitShaderModule,
-                                                 const VkShaderModule& missShaderModule) const {
+const VkPipeline Application::createRayTracingPipeline(const VkShaderModule& raygenShaderModule, const VkShaderModule& closestHitShaderModule,
+                                                       const VkShaderModule& missShaderModule) const {
     std::array<VkPipelineShaderStageCreateInfo, 3> shaderStagesCreateInfos;
     shaderStagesCreateInfos.fill({VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO});
     shaderStagesCreateInfos[INDEX_RAYGEN].stage  = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
@@ -1051,7 +1038,9 @@ void Application::recordRayTracingCommandBuffer(const uint32_t& frameIndex, cons
 
     VK_CHECK(vkBeginCommandBuffer(m_commandBuffers[frameIndex], &commandBufferBeginInfo));
 
-    VkImageMemoryBarrier undefinedToGeneral = createImageMemoryBarrier(m_swapchainImages[frameIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    const VkImage swapchainImage = m_swapchain->getImages()[frameIndex];
+
+    VkImageMemoryBarrier undefinedToGeneral = createImageMemoryBarrier(swapchainImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
     vkCmdPipelineBarrier(m_commandBuffers[frameIndex], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
                          &undefinedToGeneral);
 
@@ -1065,8 +1054,7 @@ void Application::recordRayTracingCommandBuffer(const uint32_t& frameIndex, cons
     vkCmdTraceRaysKHR(m_commandBuffers[frameIndex], &raygenStridedBufferRegion, &missStridedBufferRegion, &closestHitStridedBufferRegion, &callableBufferRegion,
                       m_surfaceExtent.width, m_surfaceExtent.height, 1);
 
-    VkImageMemoryBarrier generalToPresentSrc =
-        createImageMemoryBarrier(m_swapchainImages[frameIndex], VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    VkImageMemoryBarrier generalToPresentSrc = createImageMemoryBarrier(swapchainImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     vkCmdPipelineBarrier(m_commandBuffers[frameIndex], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
                          &generalToPresentSrc);
 
@@ -1154,7 +1142,7 @@ void Application::updateCameraAndPushData(const uint32_t& frameTime) {
     m_rayTracingPushData.cameraTransformationInverse = glm::inverse(m_rasterPushData.cameraTransformation);
 }
 
-void Application::updateSurfaceDependantStructures(const uint32_t& graphicsQueueFamilyIndex) {
+void Application::updateSurfaceDependantStructures() {
 
     int width  = 0;
     int height = 0;
@@ -1175,22 +1163,8 @@ void Application::updateSurfaceDependantStructures(const uint32_t& graphicsQueue
     vkFreeMemory(m_device, m_depthImageMemory, nullptr);
     vkDestroyImage(m_device, m_depthImage, nullptr);
 
-    for (VkImageView& imageView : m_swapchainImageViews) {
-        vkDestroyImageView(m_device, imageView, nullptr);
-    }
-
-    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &m_surfaceCapabilities));
-    m_surfaceExtent = getSurfaceExtent(window, m_surfaceCapabilities);
-
+    m_surfaceExtent                     = m_swapchain->update();
     m_rasterPushData.oneOverAspectRatio = static_cast<float>(m_surfaceExtent.height) / static_cast<float>(m_surfaceExtent.width);
-
-    VkSwapchainKHR newSwapchain =
-        createSwapchain(m_device, m_surface, m_surfaceFormat, m_presentMode, m_swapchainImageCount, graphicsQueueFamilyIndex, m_surfaceExtent, m_swapchain);
-    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-    m_swapchain = newSwapchain;
-
-    vkGetSwapchainImagesKHR(m_device, m_swapchain, &m_swapchainImageCount, m_swapchainImages.data());
-    m_swapchainImageViews = getSwapchainImageViews(m_device, m_swapchainImages, m_surfaceFormat.format);
 
     VkDescriptorImageInfo descriptorSwapchainImageInfo = {};
     descriptorSwapchainImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
@@ -1202,8 +1176,9 @@ void Application::updateSurfaceDependantStructures(const uint32_t& graphicsQueue
     writeDescriptorSet.descriptorCount      = 1;
     writeDescriptorSet.pImageInfo           = &descriptorSwapchainImageInfo;
 
+    const std::vector<VkImageView>& swapchainImageViews = m_swapchain->getImageViews();
     for (size_t i = 0; i < m_swapchainImageCount; ++i) {
-        descriptorSwapchainImageInfo.imageView = m_swapchainImageViews[i];
+        descriptorSwapchainImageInfo.imageView = swapchainImageViews[i];
         writeDescriptorSet.dstSet              = m_descriptorSets[i];
 
         vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
