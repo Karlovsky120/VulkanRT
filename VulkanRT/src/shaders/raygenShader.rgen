@@ -6,8 +6,8 @@
 
 #include "sharedStructures.h"
 
-layout(binding = 2, set = 0) uniform accelerationStructureEXT accelerationStructure;
-layout(binding = 3, set = 0, rgba8) uniform image2D targetImage;
+layout(set = 0, binding = 2) uniform accelerationStructureEXT accelerationStructure;
+layout(set = 0, binding = 3, rgba8) uniform image2D targetImage;
 
 layout(push_constant) uniform PushConstants {
 	RayTracingPushData pd;

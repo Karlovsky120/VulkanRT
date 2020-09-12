@@ -6,7 +6,7 @@
 
 #include "sharedStructures.h"
 
-layout(scalar, set = 0, binding = 0) readonly buffer Vertices {
+layout(set = 0, binding = 0, scalar) readonly buffer Vertices {
     float vertices[];
 };
 
@@ -14,17 +14,11 @@ layout(set = 0, binding = 1) readonly buffer Indices {
     uint16_t indices[];
 };
 
-layout(location = 0) out vec3 fragColor;
+layout(location = 0) out vec3 worldPos;
 
 layout(push_constant) uniform PushConstants {
 	RasterPushData pd;
 } pc;
-
-vec3 colors[3] = vec3[](
-    vec3(1.0, 0.0, 0.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0)
-);
 
 void main() {
     ivec3 indices = ivec3((int(indices[gl_VertexIndex]) * 3) + 0,
@@ -35,12 +29,12 @@ void main() {
                        vertices[indices.y],
                        vertices[indices.z]);
 
+    worldPos = vertex;
+
     gl_Position = vec4(vertex, 1.0) * pc.pd.cameraTransformation;
 
     gl_Position.x *= pc.pd.oneOverTanOfHalfFov * pc.pd.oneOverAspectRatio;
     gl_Position.y *= pc.pd.oneOverTanOfHalfFov;
     gl_Position.w = -gl_Position.z; 
     gl_Position.z = pc.pd.near;
-
-    fragColor = colors[gl_VertexIndex % 3];
 }
