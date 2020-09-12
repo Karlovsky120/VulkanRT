@@ -5,7 +5,11 @@
 #include <cassert>
 #include <cstdint>
 
+#define CPP_SHADER_STRUCTURE
+
 #ifdef _DEBUG
+#define VALIDATION_ENABLED
+
 #define VK_CHECK(call)                                                                                                                                         \
     {                                                                                                                                                          \
         VkResult result = call;                                                                                                                                \

@@ -109,7 +109,7 @@ Application::~Application() {
 
     vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 
-#ifdef _DEBUG
+#ifdef VALIDATION_ENABLED
     vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugUtilsMessenger, nullptr);
 #endif
 
@@ -168,7 +168,7 @@ void Application::run() {
     m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_RIGHT_CONTROL, {}));
     m_keyStates.emplace(std::pair<int, KeyState>(GLFW_KEY_P, {}));
 
-#ifdef _DEBUG
+#ifdef VALIDATION_ENABLED
     VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfo = {VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     debugUtilsMessengerCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
 #if INFO
@@ -658,7 +658,7 @@ const VkInstance Application::createInstance() const {
     createInfo.enabledLayerCount     = 0;
     createInfo.enabledExtensionCount = 0;
 
-#ifdef _DEBUG
+#ifdef VALIDATION_ENABLED
     std::vector<const char*> layers = {
 #if API_DUMP
         "VK_LAYER_LUNARG_api_dump",
@@ -675,7 +675,7 @@ const VkInstance Application::createInstance() const {
 
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-#ifdef _DEBUG
+#ifdef VALIDATION_ENABLED
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
@@ -1196,7 +1196,7 @@ void Application::updateSurfaceDependantStructures() {
     m_framebuffers = createFramebuffers();
 }
 
-#ifdef _DEBUG
+#ifdef VALIDATION_ENABLED
 VkBool32 VKAPI_CALL Application::debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* /*pUserData*/) {
     const char* severity = (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
