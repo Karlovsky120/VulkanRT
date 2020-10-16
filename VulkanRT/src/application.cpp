@@ -12,6 +12,8 @@
 #include "glm/fwd.hpp"
 #include "glm/gtx/rotate_vector.hpp"
 #include "glm/mat4x4.hpp"
+
+#include "OBJ_Loader.h"
 #pragma warning(pop)
 
 #include <array>
@@ -30,7 +32,7 @@
 #define FOV    glm::radians(100.0f)
 #define NEAR   0.001f
 
-#define ACCELERATION_FACTOR 300.0f
+#define ACCELERATION_FACTOR 50.0f
 
 #define STAGING_BUFFER_SIZE 67'108'864 // 64MB
 
@@ -266,18 +268,15 @@ void Application::run() {
 
     m_transferCommandPool = createCommandPool(m_device, m_queueFamilyIndex);
 
-    // clang-format off
-    std::vector<float> cubeVertices = {
-            0.5, -0.5, -0.5,
-            0.5, -0.5, 0.5,
-            -0.5, -0.5, 0.5,
-            -0.5, -0.5, -0.5,
-            0.5, 0.5, -0.5,
-            0.5, 0.5, 0.5,
-            -0.5, 0.5, 0.5,
-            -0.5, 0.5, -0.5
-    };
-    // clang-format on
+    objl::Loader loader;
+    loader.LoadFile("resources/porsche.obj");
+
+    std::vector<float> cubeVertices;
+    for (objl::Vertex& vert : loader.LoadedVertices) {
+        cubeVertices.push_back(vert.Position.X);
+        cubeVertices.push_back(vert.Position.Y);
+        cubeVertices.push_back(vert.Position.Z);
+    }
 
     VkBufferUsageFlags bufferUsageFlags =
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR;
@@ -288,16 +287,11 @@ void Application::run() {
 
     uploadToDeviceLocalBuffer(m_device, cubeVertices, stagingBuffer.buffer, stagingBuffer.memory, m_vertexBuffer.buffer, m_transferCommandPool, queue);
 
-    // clang-format off
-    std::vector<uint16_t> cubeIndices = {
-            0, 1, 3, 3, 1, 2,
-            1, 5, 2, 2, 5, 6,
-            5, 4, 6, 6, 4, 7,
-            4, 0, 7, 7, 0, 3,
-            3, 2, 7, 7, 2, 6,
-            4, 5, 0, 0, 5, 1
-    };
-    // clang-format on
+    std::vector<uint16_t> cubeIndices;
+
+    for (unsigned int& ind : loader.LoadedIndices) {
+        cubeIndices.push_back(ind);
+    }
 
     uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
     m_indexBuffer            = createBuffer(m_device, indexBufferSize, bufferUsageFlags, m_physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -899,7 +893,7 @@ const VkPipeline Application::createRasterPipeline(const VkShaderModule& vertexS
     VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     rasterizationStateCreateInfo.lineWidth                              = 1.0f;
     rasterizationStateCreateInfo.frontFace                              = VK_FRONT_FACE_CLOCKWISE;
-    rasterizationStateCreateInfo.cullMode                               = VK_CULL_MODE_BACK_BIT;
+    rasterizationStateCreateInfo.cullMode                               = VK_CULL_MODE_NONE;
     createInfo.pRasterizationState                                      = &rasterizationStateCreateInfo;
 
     VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
@@ -909,7 +903,7 @@ const VkPipeline Application::createRasterPipeline(const VkShaderModule& vertexS
     VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     depthStencilStateCreateInfo.depthTestEnable                       = true;
     depthStencilStateCreateInfo.depthWriteEnable                      = true;
-    depthStencilStateCreateInfo.depthCompareOp                        = VK_COMPARE_OP_GREATER;
+    depthStencilStateCreateInfo.depthCompareOp                        = VK_COMPARE_OP_LESS;
     createInfo.pDepthStencilState                                     = &depthStencilStateCreateInfo;
 
     VkPipelineColorBlendAttachmentState colorBlendAttachmentState = {};
@@ -1010,7 +1004,7 @@ void Application::recordRasterCommandBuffer(const uint32_t& frameIndex, const ui
     renderPassBeginInfo.renderArea.extent     = m_surfaceExtent;
 
     VkClearValue                colorImageClearColor = {0.0f, 0.0f, 0.2f, 1.0f};
-    VkClearValue                depthImageClearColor = {0.0f, 0.0f, 0.0f, 0.0f};
+    VkClearValue                depthImageClearColor = {1.0f, 1.0f, 1.0f, 1.0f};
     std::array<VkClearValue, 2> imageClearColors     = {colorImageClearColor, depthImageClearColor};
     renderPassBeginInfo.clearValueCount              = static_cast<uint32_t>(imageClearColors.size());
     renderPassBeginInfo.pClearValues                 = imageClearColors.data();
@@ -1082,7 +1076,7 @@ void Application::updateCameraAndPushData(const uint32_t& frameTime) {
 
     float epsilon = 0.00001f;
 
-    m_camera.orientation.y += rotateSpeedModifier * mouseY;
+    m_camera.orientation.y -= rotateSpeedModifier * mouseY;
     if (m_camera.orientation.y > PI * 0.5f) {
         m_camera.orientation.y = PI * 0.5f - epsilon;
     } else if (m_camera.orientation.y < -PI * 0.5f) {
@@ -1115,11 +1109,11 @@ void Application::updateCameraAndPushData(const uint32_t& frameTime) {
     }
 
     if (m_keyStates[GLFW_KEY_SPACE].pressed) {
-        deltaPosition += globalUp;
+        deltaPosition -= globalUp;
     }
 
     if (m_keyStates[GLFW_KEY_LEFT_CONTROL].pressed) {
-        deltaPosition -= globalUp;
+        deltaPosition += globalUp;
     }
 
     float dt = frameTime * 0.000001f; // Time in seconds

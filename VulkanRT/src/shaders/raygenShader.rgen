@@ -20,7 +20,7 @@ void main() {
     float z = -pc.pd.oneOverTanOfHalfFov * gl_LaunchSizeEXT.y;
 
 	vec4 origin = vec4(0,0,0,1) * pc.pd.cameraTransformationInverse;
-    vec4 direction = vec4(pixelCenter.x, pixelCenter.y, z, 1) * pc.pd.cameraTransformationInverse;
+    vec4 direction = vec4(pixelCenter.x, -pixelCenter.y, z, 1) * pc.pd.cameraTransformationInverse;
 
 	float tmin = 0.0001;
 	float tmax = 1000.0;
