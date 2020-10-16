@@ -271,33 +271,58 @@ void Application::run() {
     objl::Loader loader;
     loader.LoadFile("resources/porsche.obj");
 
-    std::vector<float> cubeVertices;
+    std::vector<float> objectVertices;
     for (objl::Vertex& vert : loader.LoadedVertices) {
-        cubeVertices.push_back(vert.Position.X);
-        cubeVertices.push_back(vert.Position.Y);
-        cubeVertices.push_back(vert.Position.Z);
+        objectVertices.push_back(10 * vert.Position.X);
+        objectVertices.push_back(10 * vert.Position.Y);
+        objectVertices.push_back(10 * vert.Position.Z);
     }
 
     VkBufferUsageFlags bufferUsageFlags =
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR;
 
-    uint32_t vertexBufferSize = sizeof(float) * static_cast<uint32_t>(cubeVertices.size());
+    uint32_t vertexBufferSize = sizeof(float) * static_cast<uint32_t>(objectVertices.size());
     m_vertexBuffer = createBuffer(m_device, vertexBufferSize, bufferUsageFlags, m_physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                   VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
-    uploadToDeviceLocalBuffer(m_device, cubeVertices, stagingBuffer.buffer, stagingBuffer.memory, m_vertexBuffer.buffer, m_transferCommandPool, queue);
+    uploadToDeviceLocalBuffer(m_device, objectVertices, stagingBuffer.buffer, stagingBuffer.memory, m_vertexBuffer.buffer, m_transferCommandPool, queue);
 
-    std::vector<uint16_t> cubeIndices;
+    std::vector<uint16_t> objectIndices;
 
     for (unsigned int& ind : loader.LoadedIndices) {
-        cubeIndices.push_back(ind);
+        objectIndices.push_back(ind);
     }
 
-    uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(cubeIndices.size());
+    uint32_t indexBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(objectIndices.size());
     m_indexBuffer            = createBuffer(m_device, indexBufferSize, bufferUsageFlags, m_physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                  VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
-    uploadToDeviceLocalBuffer(m_device, cubeIndices, stagingBuffer.buffer, stagingBuffer.memory, m_indexBuffer.buffer, m_transferCommandPool, queue);
+    uploadToDeviceLocalBuffer(m_device, objectIndices, stagingBuffer.buffer, stagingBuffer.memory, m_indexBuffer.buffer, m_transferCommandPool, queue);
+
+    // clang-format off
+    glm::mat4 bernie = 1.0f / 6.0f *
+        glm::mat4(
+            -1, 3, -3, 1,
+            3, -6, 0, 4,
+            -3, 3, 3, 1,
+            1, 0, 0, 0);
+    // clang-format on
+
+    std::vector<glm::vec3> controlPoints;
+    controlPoints.push_back({0, 0, 0});
+    controlPoints.push_back({0, 10, 5});
+    controlPoints.push_back({10, 10, 10});
+    controlPoints.push_back({10, 0, 15});
+
+    controlPoints.push_back({0, 0, 20});
+    controlPoints.push_back({0, 10, 25});
+    controlPoints.push_back({10, 10, 30});
+    controlPoints.push_back({10, 0, 35});
+
+    controlPoints.push_back({0, 0, 40});
+    controlPoints.push_back({0, 10, 45});
+    controlPoints.push_back({10, 10, 50});
+    controlPoints.push_back({10, 0, 55});
 
     VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
     pipelineCacheCreateInfo.initialDataSize           = 0;
@@ -356,7 +381,7 @@ void Application::run() {
     vkDestroyShaderModule(m_device, vertexShader, nullptr);
 
     m_bottomLevelAccelerationStructure = createBottomAccelerationStructure(
-        m_device, static_cast<uint32_t>(cubeVertices.size() / 3), static_cast<uint32_t>(cubeIndices.size() / 3), m_vertexBuffer.deviceAddress,
+        m_device, static_cast<uint32_t>(objectVertices.size() / 3), static_cast<uint32_t>(objectIndices.size() / 3), m_vertexBuffer.deviceAddress,
         m_indexBuffer.deviceAddress, m_physicalDeviceMemoryProperties, queue, m_queueFamilyIndex);
 
     m_topLevelAccelerationStructure =
@@ -546,11 +571,15 @@ void Application::run() {
     m_rayTracingPushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
 
     uint32_t currentFrame = 0;
-    bool     rayTracing   = true;
+    bool     rayTracing   = false;
     bool     updatedUI    = false;
 
     std::chrono::high_resolution_clock::time_point oldTime = std::chrono::high_resolution_clock::now();
     uint32_t                                       time    = 0;
+
+    float    t            = 0;
+    uint32_t segment      = 0;
+    uint32_t segmentCount = controlPoints.size() - 3;
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -596,11 +625,28 @@ void Application::run() {
 
         updateCameraAndPushData(frameTime);
 
+        if (t > 1.0f) {
+            ++segment;
+            t = 0.0f;
+
+            if (segment > controlPoints.size() - 4) {
+                segment = 0;
+            }
+        }
+
+        glm::vec3 objectPosition = getPositionOnSpline(controlPoints, segment, bernie, t);
+
+        m_rasterPushData.objectTransformation = glm::translate(glm::mat4(1.0f), objectPosition);
+        m_rasterPushData.objectTransformation = glm::transpose(m_rasterPushData.objectTransformation);
+
+        t += 0.001;
+        std::cout << objectPosition.x << " " << objectPosition.y << " " << objectPosition.z << std::endl;
+
         if (rayTracing) {
             recordRayTracingCommandBuffer(imageIndex, raygenStridedBufferRegion, closestHitStridedBufferRegion, missStridedBufferRegion,
                                           callableStridedBufferRegion);
         } else {
-            recordRasterCommandBuffer(imageIndex, static_cast<uint32_t>(cubeIndices.size()));
+            recordRasterCommandBuffer(imageIndex, static_cast<uint32_t>(objectIndices.size()));
         }
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
@@ -1188,6 +1234,25 @@ void Application::updateSurfaceDependantStructures() {
 
     m_renderPass   = createRenderPass();
     m_framebuffers = createFramebuffers();
+}
+
+glm::vec3 Application::getPositionOnSpline(const std::vector<glm::vec3>& controlPoints, const uint32_t currentControl, const glm::mat4& bernie, const float t) {
+    glm::vec4 params;
+    float     current = 1.0f;
+    params[3]         = current;
+    for (int32_t i = 2; i > -1; --i) {
+        current *= t;
+        params[i] = current;
+    }
+
+    const glm::vec3& r0 = controlPoints[currentControl];
+    const glm::vec3& r1 = controlPoints[currentControl + 1];
+    const glm::vec3& r2 = controlPoints[currentControl + 2];
+    const glm::vec3& r3 = controlPoints[currentControl + 3];
+
+    glm::mat3x4 controls = glm::mat3x4(r0.x, r1.x, r2.x, r3.x, r0.y, r1.y, r2.y, r3.y, r0.z, r1.z, r2.z, r3.z);
+
+    return params * bernie * controls;
 }
 
 #ifdef VALIDATION_ENABLED

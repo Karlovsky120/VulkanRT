@@ -105,6 +105,7 @@ class Application {
                                                                    const VkStridedBufferRegionKHR& callableBufferRegion) const;
     void                             updateCameraAndPushData(const uint32_t& frameTime);
     void                             updateSurfaceDependantStructures();
+    glm::vec3 getPositionOnSpline(const std::vector<glm::vec3>& controlPoints, const uint32_t currentControl, const glm::mat4& bernie, const float t);
 
     static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* /*pUserData*/);

@@ -13,6 +13,7 @@
 
 struct RasterPushData {
     mat4 cameraTransformation;
+    mat4 objectTransformation;
 
     // Perspective parameters for reverse z
     float oneOverTanOfHalfFov;
