@@ -11,6 +11,7 @@
 #define GLM_FORCE_XYZW_ONLY
 #include "glm/fwd.hpp"
 #include "glm/gtx/rotate_vector.hpp"
+#include "glm/gtx/vector_angle.hpp"
 #include "glm/mat4x4.hpp"
 
 #include "OBJ_Loader.h"
@@ -32,7 +33,7 @@
 #define FOV    glm::radians(100.0f)
 #define NEAR   0.001f
 
-#define ACCELERATION_FACTOR 50.0f
+#define ACCELERATION_FACTOR 300.0f
 
 #define STAGING_BUFFER_SIZE 67'108'864 // 64MB
 
@@ -94,6 +95,12 @@ Application::~Application() {
 
     vkDestroyBuffer(m_device, m_vertexBuffer.buffer, nullptr);
     vkFreeMemory(m_device, m_vertexBuffer.memory, nullptr);
+
+    vkDestroyBuffer(m_device, m_indexPathBuffer.buffer, nullptr);
+    vkFreeMemory(m_device, m_indexPathBuffer.memory, nullptr);
+
+    vkDestroyBuffer(m_device, m_vertexPathBuffer.buffer, nullptr);
+    vkFreeMemory(m_device, m_vertexPathBuffer.memory, nullptr);
 
     for (VkFramebuffer& framebuffer : m_framebuffers) {
         vkDestroyFramebuffer(m_device, framebuffer, nullptr);
@@ -306,6 +313,13 @@ void Application::run() {
             3, -6, 0, 4,
             -3, 3, 3, 1,
             1, 0, 0, 0);
+
+    glm::mat4x3 deriviBernie = 0.5f *
+        glm::mat4x3(
+            -1, 2, -1,
+            3, -4, 0,
+            -3, 2, 1,
+            1, 0, 0);
     // clang-format on
 
     std::vector<glm::vec3> controlPoints;
@@ -323,6 +337,69 @@ void Application::run() {
     controlPoints.push_back({0, 10, 45});
     controlPoints.push_back({10, 10, 50});
     controlPoints.push_back({10, 0, 55});
+
+    std::vector<glm::vec3> pathVertices;
+    std::vector<uint16_t>  pathIndices;
+    float                  radius    = 0.2f;
+    uint32_t               steps     = 60;
+    float                  angleStep = 2.0f * 3.1415926535f / steps;
+    uint32_t               offset    = 0;
+    for (uint32_t i = 0; i < controlPoints.size() - 3; ++i) {
+        for (float t = 0; t < 1.0f; t += 0.025f) {
+            glm::vec4 params;
+            float     current = 1.0f;
+            params[3]         = current;
+            for (int32_t i = 2; i > -1; --i) {
+                current *= t;
+                params[i] = current;
+            }
+
+            glm::vec3 deriviParams       = {params.y, params.z, 1};
+            glm::vec3 deriviDeriviParams = {2 * params.z, 1, 0};
+
+            const glm::vec3& r0 = controlPoints[i];
+            const glm::vec3& r1 = controlPoints[i + 1];
+            const glm::vec3& r2 = controlPoints[i + 2];
+            const glm::vec3& r3 = controlPoints[i + 3];
+
+            glm::mat3x4 controls = glm::mat3x4(r0.x, r1.x, r2.x, r3.x, r0.y, r1.y, r2.y, r3.y, r0.z, r1.z, r2.z, r3.z);
+
+            glm::vec3 position = params * bernie * controls;
+            glm::vec3 tangent  = glm::normalize(deriviParams * deriviBernie * controls);
+            glm::vec3 normal   = glm::normalize(deriviDeriviParams * deriviBernie * controls);
+
+            for (uint32_t d = 0; d < steps; ++d) {
+                glm::vec3 rotated = glm::rotate(normal, angleStep * d, tangent);
+                pathVertices.push_back(position + radius * glm::normalize(rotated));
+                ++offset;
+            }
+
+            uint32_t start = offset - 2 * steps;
+
+            if (i != 0 || t != 0) {
+                for (uint32_t j = 0; j < steps; ++j) {
+                    pathIndices.push_back(start + j);
+                    pathIndices.push_back(start + (j + 1) % steps);
+                    pathIndices.push_back(start + steps + j);
+                    pathIndices.push_back(start + (j + 1) % steps);
+                    pathIndices.push_back(start + steps + (j + 1) % steps);
+                    pathIndices.push_back(start + steps + j);
+                }
+            }
+        }
+    }
+
+    uint32_t vertexPathBufferSize = sizeof(glm::vec3) * static_cast<uint32_t>(pathVertices.size());
+    m_vertexPathBuffer = createBuffer(m_device, vertexPathBufferSize, bufferUsageFlags, m_physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+
+    uploadToDeviceLocalBuffer(m_device, pathVertices, stagingBuffer.buffer, stagingBuffer.memory, m_vertexPathBuffer.buffer, m_transferCommandPool, queue);
+
+    uint32_t indexPathBufferSize = sizeof(uint16_t) * static_cast<uint32_t>(pathIndices.size());
+    m_indexPathBuffer = createBuffer(m_device, indexPathBufferSize, bufferUsageFlags, m_physicalDeviceMemoryProperties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                     VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+
+    uploadToDeviceLocalBuffer(m_device, pathIndices, stagingBuffer.buffer, stagingBuffer.memory, m_indexPathBuffer.buffer, m_transferCommandPool, queue);
 
     VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
     pipelineCacheCreateInfo.initialDataSize           = 0;
@@ -420,7 +497,7 @@ void Application::run() {
     VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     descriptorPoolCreateInfo.poolSizeCount              = static_cast<uint32_t>(descriptorPoolSizes.size());
     descriptorPoolCreateInfo.pPoolSizes                 = descriptorPoolSizes.data();
-    descriptorPoolCreateInfo.maxSets                    = m_swapchainImageCount;
+    descriptorPoolCreateInfo.maxSets                    = m_swapchainImageCount * 2;
     VK_CHECK(vkCreateDescriptorPool(m_device, &descriptorPoolCreateInfo, nullptr, &m_descriptorPool));
 
     // Allocating one descriptor set for each swapchain image, all with the same layout
@@ -431,17 +508,28 @@ void Application::run() {
     descriptorSetAllocateInfo.descriptorSetCount          = m_swapchainImageCount;
     descriptorSetAllocateInfo.pSetLayouts                 = descriptorSetLayouts.data();
 
-    m_descriptorSets = std::vector<VkDescriptorSet>(m_swapchainImageCount);
-    vkAllocateDescriptorSets(m_device, &descriptorSetAllocateInfo, m_descriptorSets.data());
+    m_objectDescriptorSets = std::vector<VkDescriptorSet>(m_swapchainImageCount);
+    vkAllocateDescriptorSets(m_device, &descriptorSetAllocateInfo, m_objectDescriptorSets.data());
+    m_pathDescriptorSets = std::vector<VkDescriptorSet>(m_swapchainImageCount);
+    vkAllocateDescriptorSets(m_device, &descriptorSetAllocateInfo, m_pathDescriptorSets.data());
 
-    std::array<VkDescriptorBufferInfo, 2> descriptorBufferInfos;
-    descriptorBufferInfos[0].buffer = m_vertexBuffer.buffer;
-    descriptorBufferInfos[0].offset = 0;
-    descriptorBufferInfos[0].range  = vertexBufferSize;
+    std::array<VkDescriptorBufferInfo, 2> descriptorObjectBufferInfos;
+    descriptorObjectBufferInfos[0].buffer = m_vertexBuffer.buffer;
+    descriptorObjectBufferInfos[0].offset = 0;
+    descriptorObjectBufferInfos[0].range  = vertexBufferSize;
 
-    descriptorBufferInfos[1].buffer = m_indexBuffer.buffer;
-    descriptorBufferInfos[1].offset = 0;
-    descriptorBufferInfos[1].range  = indexBufferSize;
+    descriptorObjectBufferInfos[1].buffer = m_indexBuffer.buffer;
+    descriptorObjectBufferInfos[1].offset = 0;
+    descriptorObjectBufferInfos[1].range  = indexBufferSize;
+
+    std::array<VkDescriptorBufferInfo, 2> descriptorPathBufferInfos;
+    descriptorPathBufferInfos[0].buffer = m_vertexPathBuffer.buffer;
+    descriptorPathBufferInfos[0].offset = 0;
+    descriptorPathBufferInfos[0].range  = vertexPathBufferSize;
+
+    descriptorPathBufferInfos[1].buffer = m_indexPathBuffer.buffer;
+    descriptorPathBufferInfos[1].offset = 0;
+    descriptorPathBufferInfos[1].range  = indexPathBufferSize;
 
     VkWriteDescriptorSetAccelerationStructureKHR writeDescriptorSetAccelerationStructure = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
     writeDescriptorSetAccelerationStructure.accelerationStructureCount                   = 1;
@@ -450,36 +538,47 @@ void Application::run() {
     VkDescriptorImageInfo descriptorSwapchainImageInfo = {};
     descriptorSwapchainImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
 
-    std::array<VkWriteDescriptorSet, 3> writeDescriptorSets;
-    writeDescriptorSets.fill({VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
+    std::array<VkWriteDescriptorSet, 3> writeObjectDescriptorSets;
+    writeObjectDescriptorSets.fill({VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
 
-    writeDescriptorSets[0].dstBinding      = 0; // 0 for vertex and 1 for index buffer
-    writeDescriptorSets[0].dstArrayElement = 0;
-    writeDescriptorSets[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writeDescriptorSets[0].descriptorCount = static_cast<uint32_t>(descriptorBufferInfos.size());
-    writeDescriptorSets[0].pBufferInfo     = descriptorBufferInfos.data();
+    writeObjectDescriptorSets[0].dstBinding      = 0; // 0 for vertex and 1 for index buffer
+    writeObjectDescriptorSets[0].dstArrayElement = 0;
+    writeObjectDescriptorSets[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writeObjectDescriptorSets[0].descriptorCount = static_cast<uint32_t>(descriptorObjectBufferInfos.size());
+    writeObjectDescriptorSets[0].pBufferInfo     = descriptorObjectBufferInfos.data();
 
-    writeDescriptorSets[1].dstBinding      = 2;
-    writeDescriptorSets[1].dstArrayElement = 0;
-    writeDescriptorSets[1].descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-    writeDescriptorSets[1].descriptorCount = 1;
-    writeDescriptorSets[1].pNext           = &writeDescriptorSetAccelerationStructure;
+    writeObjectDescriptorSets[1].dstBinding      = 2;
+    writeObjectDescriptorSets[1].dstArrayElement = 0;
+    writeObjectDescriptorSets[1].descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    writeObjectDescriptorSets[1].descriptorCount = 1;
+    writeObjectDescriptorSets[1].pNext           = &writeDescriptorSetAccelerationStructure;
 
-    writeDescriptorSets[2].dstBinding      = 3;
-    writeDescriptorSets[2].dstArrayElement = 0;
-    writeDescriptorSets[2].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writeDescriptorSets[2].descriptorCount = 1;
-    writeDescriptorSets[2].pImageInfo      = &descriptorSwapchainImageInfo;
+    writeObjectDescriptorSets[2].dstBinding      = 3;
+    writeObjectDescriptorSets[2].dstArrayElement = 0;
+    writeObjectDescriptorSets[2].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writeObjectDescriptorSets[2].descriptorCount = 1;
+    writeObjectDescriptorSets[2].pImageInfo      = &descriptorSwapchainImageInfo;
+
+    std::array<VkWriteDescriptorSet, 1> writePathDescriptorSets;
+    writePathDescriptorSets.fill({VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
+
+    writePathDescriptorSets[0].dstBinding      = 0; // 0 for vertex and 1 for index buffer
+    writePathDescriptorSets[0].dstArrayElement = 0;
+    writePathDescriptorSets[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writePathDescriptorSets[0].descriptorCount = static_cast<uint32_t>(descriptorPathBufferInfos.size());
+    writePathDescriptorSets[0].pBufferInfo     = descriptorPathBufferInfos.data();
 
     const std::vector<VkImageView>& swapchainImageViews = m_swapchain->getImageViews();
     for (size_t i = 0; i < m_swapchainImageCount; ++i) {
         descriptorSwapchainImageInfo.imageView = swapchainImageViews[i];
 
-        writeDescriptorSets[0].dstSet = m_descriptorSets[i];
-        writeDescriptorSets[1].dstSet = m_descriptorSets[i];
-        writeDescriptorSets[2].dstSet = m_descriptorSets[i];
+        writeObjectDescriptorSets[0].dstSet = m_objectDescriptorSets[i];
+        writeObjectDescriptorSets[1].dstSet = m_objectDescriptorSets[i];
+        writeObjectDescriptorSets[2].dstSet = m_objectDescriptorSets[i];
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeObjectDescriptorSets.size()), writeObjectDescriptorSets.data(), 0, nullptr);
 
-        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+        writePathDescriptorSets[0].dstSet = m_pathDescriptorSets[i];
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writePathDescriptorSets.size()), writePathDescriptorSets.data(), 0, nullptr);
     }
 
     const uint32_t shaderGroupCount = 3;
@@ -564,9 +663,14 @@ void Application::run() {
     m_camera.orientation = glm::vec2(0.0f, 0.0f);
     m_camera.position    = glm::vec3(0.0f, 0.0f, 2.5f);
 
-    m_rasterPushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
-    m_rasterPushData.oneOverAspectRatio  = static_cast<float>(m_surfaceExtent.height) / static_cast<float>(m_surfaceExtent.width);
-    m_rasterPushData.near                = NEAR;
+    m_objectRasterPushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
+    m_objectRasterPushData.oneOverAspectRatio  = static_cast<float>(m_surfaceExtent.height) / static_cast<float>(m_surfaceExtent.width);
+    m_objectRasterPushData.near                = NEAR;
+
+    m_pathRasterPushData.oneOverTanOfHalfFov  = m_objectRasterPushData.oneOverTanOfHalfFov;
+    m_pathRasterPushData.oneOverAspectRatio   = m_objectRasterPushData.oneOverAspectRatio;
+    m_pathRasterPushData.near                 = m_objectRasterPushData.near;
+    m_pathRasterPushData.objectTransformation = glm::identity<glm::mat4>();
 
     m_rayTracingPushData.oneOverTanOfHalfFov = 1.0f / tan(0.5f * FOV);
 
@@ -634,19 +738,14 @@ void Application::run() {
             }
         }
 
-        glm::vec3 objectPosition = getPositionOnSpline(controlPoints, segment, bernie, t);
-
-        m_rasterPushData.objectTransformation = glm::translate(glm::mat4(1.0f), objectPosition);
-        m_rasterPushData.objectTransformation = glm::transpose(m_rasterPushData.objectTransformation);
-
-        t += 0.001;
-        std::cout << objectPosition.x << " " << objectPosition.y << " " << objectPosition.z << std::endl;
+        m_objectRasterPushData.objectTransformation = getTransformationOnSpline(controlPoints, segment, bernie, deriviBernie, t);
+        t += 0.0004;
 
         if (rayTracing) {
             recordRayTracingCommandBuffer(imageIndex, raygenStridedBufferRegion, closestHitStridedBufferRegion, missStridedBufferRegion,
                                           callableStridedBufferRegion);
         } else {
-            recordRasterCommandBuffer(imageIndex, static_cast<uint32_t>(objectIndices.size()));
+            recordRasterCommandBuffer(imageIndex, static_cast<uint32_t>(objectIndices.size()), static_cast<uint32_t>(pathIndices.size()));
         }
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
@@ -1024,7 +1123,7 @@ const VkPipeline Application::createRayTracingPipeline(const VkShaderModule& ray
     return pipeline;
 }
 
-void Application::recordRasterCommandBuffer(const uint32_t& frameIndex, const uint32_t& indexCount) const {
+void Application::recordRasterCommandBuffer(const uint32_t& frameIndex, const uint32_t& objectIndexCount, const uint32_t& pathIndexCount) const {
     VkCommandBufferBeginInfo commandBufferBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
     VkViewport viewport = {};
@@ -1057,13 +1156,17 @@ void Application::recordRasterCommandBuffer(const uint32_t& frameIndex, const ui
     renderPassBeginInfo.framebuffer                  = m_framebuffers[frameIndex];
     vkCmdBeginRenderPass(m_commandBuffers[frameIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdPushConstants(m_commandBuffers[frameIndex], m_rasterPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RasterPushData), &m_rasterPushData);
-
     vkCmdBindPipeline(m_commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, m_rasterPipeline);
-    vkCmdBindDescriptorSets(m_commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, m_rasterPipelineLayout, 0, 1, &m_descriptorSets[frameIndex], 0,
-                            nullptr);
 
-    vkCmdDraw(m_commandBuffers[frameIndex], indexCount, 1, 0, 0);
+    vkCmdBindDescriptorSets(m_commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, m_rasterPipelineLayout, 0, 1, &m_objectDescriptorSets[frameIndex], 0,
+                            nullptr);
+    vkCmdPushConstants(m_commandBuffers[frameIndex], m_rasterPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RasterPushData), &m_objectRasterPushData);
+    vkCmdDraw(m_commandBuffers[frameIndex], objectIndexCount, 1, 0, 0);
+
+    vkCmdBindDescriptorSets(m_commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, m_rasterPipelineLayout, 0, 1, &m_pathDescriptorSets[frameIndex], 0,
+                            nullptr);
+    vkCmdPushConstants(m_commandBuffers[frameIndex], m_rasterPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RasterPushData), &m_pathRasterPushData);
+    vkCmdDraw(m_commandBuffers[frameIndex], pathIndexCount, 1, 0, 0);
 
     vkCmdEndRenderPass(m_commandBuffers[frameIndex]);
 
@@ -1089,7 +1192,7 @@ void Application::recordRayTracingCommandBuffer(const uint32_t& frameIndex, cons
 
     vkCmdBindPipeline(m_commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_rayTracingPipeline);
     vkCmdBindDescriptorSets(m_commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_rayTracingPipelineLayout, 0, 1,
-                            &m_descriptorSets[frameIndex], 0, nullptr);
+                            &m_objectDescriptorSets[frameIndex], 0, nullptr);
 
     vkCmdTraceRaysKHR(m_commandBuffers[frameIndex], &raygenStridedBufferRegion, &missStridedBufferRegion, &closestHitStridedBufferRegion, &callableBufferRegion,
                       m_surfaceExtent.width, m_surfaceExtent.height, 1);
@@ -1175,11 +1278,15 @@ void Application::updateCameraAndPushData(const uint32_t& frameTime) {
 
     m_camera.position += offset;
 
-    m_rasterPushData.cameraTransformation = glm::transpose(glm::translate(glm::identity<glm::mat4>(), -m_camera.position));
-    m_rasterPushData.cameraTransformation = glm::rotate(m_rasterPushData.cameraTransformation, static_cast<float>(m_camera.orientation.x), globalUp);
-    m_rasterPushData.cameraTransformation = glm::rotate(m_rasterPushData.cameraTransformation, static_cast<float>(m_camera.orientation.y), globalRight);
+    m_objectRasterPushData.cameraTransformation = glm::transpose(glm::translate(glm::identity<glm::mat4>(), -m_camera.position));
+    m_objectRasterPushData.cameraTransformation =
+        glm::rotate(m_objectRasterPushData.cameraTransformation, static_cast<float>(m_camera.orientation.x), globalUp);
+    m_objectRasterPushData.cameraTransformation =
+        glm::rotate(m_objectRasterPushData.cameraTransformation, static_cast<float>(m_camera.orientation.y), globalRight);
 
-    m_rayTracingPushData.cameraTransformationInverse = glm::inverse(m_rasterPushData.cameraTransformation);
+    m_pathRasterPushData.cameraTransformation = m_objectRasterPushData.cameraTransformation;
+
+    m_rayTracingPushData.cameraTransformationInverse = glm::inverse(m_objectRasterPushData.cameraTransformation);
 }
 
 void Application::updateSurfaceDependantStructures() {
@@ -1203,8 +1310,8 @@ void Application::updateSurfaceDependantStructures() {
     vkFreeMemory(m_device, m_depthImageMemory, nullptr);
     vkDestroyImage(m_device, m_depthImage, nullptr);
 
-    m_surfaceExtent                     = m_swapchain->update();
-    m_rasterPushData.oneOverAspectRatio = static_cast<float>(m_surfaceExtent.height) / static_cast<float>(m_surfaceExtent.width);
+    m_surfaceExtent                           = m_swapchain->update();
+    m_objectRasterPushData.oneOverAspectRatio = static_cast<float>(m_surfaceExtent.height) / static_cast<float>(m_surfaceExtent.width);
 
     VkDescriptorImageInfo descriptorSwapchainImageInfo = {};
     descriptorSwapchainImageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
@@ -1219,7 +1326,7 @@ void Application::updateSurfaceDependantStructures() {
     const std::vector<VkImageView>& swapchainImageViews = m_swapchain->getImageViews();
     for (size_t i = 0; i < m_swapchainImageCount; ++i) {
         descriptorSwapchainImageInfo.imageView = swapchainImageViews[i];
-        writeDescriptorSet.dstSet              = m_descriptorSets[i];
+        writeDescriptorSet.dstSet              = m_objectDescriptorSets[i];
 
         vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
     }
@@ -1236,7 +1343,8 @@ void Application::updateSurfaceDependantStructures() {
     m_framebuffers = createFramebuffers();
 }
 
-glm::vec3 Application::getPositionOnSpline(const std::vector<glm::vec3>& controlPoints, const uint32_t currentControl, const glm::mat4& bernie, const float t) {
+glm::mat4 Application::getTransformationOnSpline(const std::vector<glm::vec3>& controlPoints, const uint32_t currentControl, const glm::mat4& bernie,
+                                                 const glm::mat4x3& deriviBernie, const float t) {
     glm::vec4 params;
     float     current = 1.0f;
     params[3]         = current;
@@ -1245,6 +1353,9 @@ glm::vec3 Application::getPositionOnSpline(const std::vector<glm::vec3>& control
         params[i] = current;
     }
 
+    glm::vec3 deriviParams       = {params.y, params.z, 1};
+    glm::vec3 deriviDeriviParams = {2 * params.z, 1, 0};
+
     const glm::vec3& r0 = controlPoints[currentControl];
     const glm::vec3& r1 = controlPoints[currentControl + 1];
     const glm::vec3& r2 = controlPoints[currentControl + 2];
@@ -1252,7 +1363,32 @@ glm::vec3 Application::getPositionOnSpline(const std::vector<glm::vec3>& control
 
     glm::mat3x4 controls = glm::mat3x4(r0.x, r1.x, r2.x, r3.x, r0.y, r1.y, r2.y, r3.y, r0.z, r1.z, r2.z, r3.z);
 
-    return params * bernie * controls;
+    glm::vec3 position = params * bernie * controls;
+    glm::vec3 tangent  = glm::normalize(deriviParams * deriviBernie * controls);
+    glm::vec3 normal   = glm::normalize(deriviDeriviParams * deriviBernie * controls);
+    glm::vec3 binormal = glm::normalize(glm::cross(tangent, normal));
+
+    glm::mat4 rotMat = glm::identity<glm::mat4>();
+    rotMat[2][0]     = tangent.x;
+    rotMat[2][1]     = tangent.y;
+    rotMat[2][2]     = tangent.z;
+
+    rotMat[1][0] = normal.x;
+    rotMat[1][1] = normal.y;
+    rotMat[1][2] = normal.z;
+
+    rotMat[0][0] = binormal.x;
+    rotMat[0][1] = binormal.y;
+    rotMat[0][2] = binormal.z;
+
+    // float angle = glm::angle({0.0f, 1.0f, 0.0f}, normal);
+
+    glm::mat4 objectMatrix = glm::translate(glm::identity<glm::mat4>(), position);
+    objectMatrix *= rotMat;
+    // glm::rotate(0.0f, tangent);
+    objectMatrix = glm::transpose(objectMatrix);
+
+    return objectMatrix;
 }
 
 #ifdef VALIDATION_ENABLED

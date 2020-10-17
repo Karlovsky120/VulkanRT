@@ -33,6 +33,8 @@ void main() {
 
     gl_Position = vec4(vertex, 1.0) * pc.pd.objectTransformation * pc.pd.cameraTransformation;
 
+    worldPos = gl_Position.xyz;
+
     gl_Position.x *= pc.pd.oneOverTanOfHalfFov * pc.pd.oneOverAspectRatio;
     gl_Position.y *= -pc.pd.oneOverTanOfHalfFov;
     gl_Position.w = -gl_Position.z; 

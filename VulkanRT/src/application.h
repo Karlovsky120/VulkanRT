@@ -69,18 +69,24 @@ class Application {
 
     std::unique_ptr<Swapchain> m_swapchain;
 
-    Buffer                m_vertexBuffer                     = {};
-    Buffer                m_indexBuffer                      = {};
+    Buffer m_vertexBuffer = {};
+    Buffer m_indexBuffer  = {};
+
+    Buffer m_vertexPathBuffer = {};
+    Buffer m_indexPathBuffer  = {};
+
     Buffer                m_shaderBindingTableBuffer         = {};
     AccelerationStructure m_topLevelAccelerationStructure    = {};
     AccelerationStructure m_bottomLevelAccelerationStructure = {};
 
-    Camera             m_camera             = {};
-    RasterPushData     m_rasterPushData     = {};
-    RayTracingPushData m_rayTracingPushData = {};
+    Camera             m_camera               = {};
+    RasterPushData     m_objectRasterPushData = {};
+    RasterPushData     m_pathRasterPushData   = {};
+    RayTracingPushData m_rayTracingPushData   = {};
 
     std::vector<VkFramebuffer>   m_framebuffers;
-    std::vector<VkDescriptorSet> m_descriptorSets;
+    std::vector<VkDescriptorSet> m_objectDescriptorSets;
+    std::vector<VkDescriptorSet> m_pathDescriptorSets;
     std::vector<VkCommandPool>   m_commandPools;
     std::vector<VkCommandBuffer> m_commandBuffers;
     std::vector<VkFence>         m_inFlightFences;
@@ -99,13 +105,14 @@ class Application {
     const VkPipeline                 createRasterPipeline(const VkShaderModule& vertexShader, const VkShaderModule& fragmentShader) const;
     const VkPipeline                 createRayTracingPipeline(const VkShaderModule& raygenShaderModule, const VkShaderModule& closestHitShaderModule,
                                                               const VkShaderModule& missShaderModule) const;
-    void                             recordRasterCommandBuffer(const uint32_t& frameIndex, const uint32_t& indexCount) const;
+    void                             recordRasterCommandBuffer(const uint32_t& frameIndex, const uint32_t& indexCount, const uint32_t& pathIndexCount) const;
     void                             recordRayTracingCommandBuffer(const uint32_t& frameIndex, const VkStridedBufferRegionKHR& raygenStridedBufferRegion,
                                                                    const VkStridedBufferRegionKHR& closestHitStridedBufferRegion, const VkStridedBufferRegionKHR& missStridedBufferRegion,
                                                                    const VkStridedBufferRegionKHR& callableBufferRegion) const;
     void                             updateCameraAndPushData(const uint32_t& frameTime);
     void                             updateSurfaceDependantStructures();
-    glm::vec3 getPositionOnSpline(const std::vector<glm::vec3>& controlPoints, const uint32_t currentControl, const glm::mat4& bernie, const float t);
+    glm::mat4 getTransformationOnSpline(const std::vector<glm::vec3>& controlPoints, const uint32_t currentControl, const glm::mat4& bernie,
+                                        const glm::mat4x3& deriviBernie, const float t);
 
     static VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* /*pUserData*/);
